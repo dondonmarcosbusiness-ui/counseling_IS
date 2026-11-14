@@ -118,6 +118,11 @@ form branding assets are in the release bundle before packaging. Signing and
 notarization options are documented in
 [docs/MACOS_BUILD.md](docs/MACOS_BUILD.md).
 
+No Mac handy? Pushing to `main` runs the same packaging script on a
+GitHub Actions macOS runner; download the `Counseling-IS-macOS-installer`
+artifact from the workflow run (unsigned test build — see
+[docs/MACOS_BUILD.md](docs/MACOS_BUILD.md)).
+
 ### Analyze and test
 
 ```shell

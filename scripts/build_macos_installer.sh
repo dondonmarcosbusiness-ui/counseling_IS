@@ -47,7 +47,14 @@ VERSION="${VERSION%%+*}"
 
 APP_DIR="build/macos/Build/Products/Release"
 APP="$APP_DIR/$APP_PRODUCT_NAME.app"
-FLUTTER_ASSETS="$APP/Contents/Resources/flutter_assets"
+# Newer Flutter releases embed flutter_assets inside App.framework;
+# older layouts keep them under Contents/Resources.
+if [[ -d "$APP/Contents/Frameworks/App.framework/Resources/flutter_assets" ]]; then
+  FLUTTER_ASSETS="$APP/Contents/Frameworks/App.framework/Resources/flutter_assets"
+else
+  FLUTTER_ASSETS="$APP/Contents/Resources/flutter_assets"
+fi
+[[ -d "$FLUTTER_ASSETS" ]] || die "flutter_assets not found in $APP"
 DMG_DIR="${DMG_DIR:-build/dmg}"
 DMG="$DMG_DIR/$APP_DISPLAY_NAME-$VERSION.dmg"
 

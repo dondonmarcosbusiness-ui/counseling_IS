@@ -77,17 +77,27 @@ contains the sandbox entitlements, then packages it with an
 build/dmg/Counseling IS-<version>.dmg
 ```
 
-### Temporary GitHub test build
+### Building on GitHub Actions
 
-The public GitHub Actions workflow builds the app on a macOS runner when
-changes are pushed to `main`. It publishes a `CounselingIS-macOS-test`
-artifact for three days. Download it from the latest run at:
+The `.github/workflows/macos-installer.yml` workflow runs the same
+packaging script on a `macos-latest` runner whenever changes are pushed
+to `main` (or manually via `workflow_dispatch`). It publishes a
+`Counseling-IS-macOS-installer` artifact containing the DMG, kept for
+30 days. Download it from the run summary at:
 
 `https://github.com/dondonmarcosbusiness-ui/counseling_IS/actions`
 
-The artifact is an unsigned, non-notarized test DMG. The DMG includes
-instructions for opening the app if Gatekeeper blocks it. Use fictional data
-only.
+A separate parallel job runs `flutter analyze` and `flutter test`.
+
+The CI artifact is unsigned and not notarized (no Apple certificate is
+available to the runner), so Gatekeeper will block it on other Macs.
+Open the app with right-click → Open, or clear the quarantine flag:
+
+```shell
+xattr -dr com.apple.quarantine /Applications/counseling_is.app
+```
+
+Use fictional data only with CI builds.
 
 ### Distributing to other Macs
 
