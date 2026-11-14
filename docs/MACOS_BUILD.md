@@ -77,6 +77,18 @@ contains the sandbox entitlements, then packages it with an
 build/dmg/Counseling IS-<version>.dmg
 ```
 
+### Temporary GitHub test build
+
+The public GitHub Actions workflow builds the app on a macOS runner when
+changes are pushed to `main`. It publishes a `CounselingIS-macOS-test`
+artifact for three days. Download it from the latest run at:
+
+`https://github.com/dondonmarcosbusiness-ui/counseling_IS/actions`
+
+The artifact is an unsigned, non-notarized test DMG. The DMG includes
+instructions for opening the app if Gatekeeper blocks it. Use fictional data
+only.
+
 ### Distributing to other Macs
 
 An unsigned build only runs on the machine that created it (Gatekeeper

@@ -33,13 +33,55 @@ jobs:
       - name: Run tests
         run: flutter test
 
-      - name: Build macOS test installer
-        run: bash scripts/build_macos_installer.sh
+      - name: Build macOS app
+        run: flutter build macos --release
+
+      - name: Package temporary test installer
+        shell: bash
+        run: |
+          set -euo pipefail
+          app="build/macos/Build/Products/Release/counseling_is.app"
+          assets="$app/Contents/Resources/flutter_assets"
+          [[ -d "$app" ]]
+          for asset in \
+            assets/forms/branding/carranglan_school_seal.png \
+            assets/forms/branding/deped_seal.png \
+            assets/forms/branding/deped_matatag_banner.jpg \
+            assets/fonts/roboto-regular.ttf \
+            assets/fonts/roboto-bold.ttf; do
+            [[ -f "$assets/$asset" ]] || {
+              echo "Required PDF asset missing from macOS app: $asset" >&2
+              exit 1
+            }
+          done
+
+          stage="build/macos-test-stage"
+          mkdir -p "$stage" build/macos-test
+          cp -R "$app" "$stage/"
+          ln -s /Applications "$stage/Applications"
+          cat > "$stage/README-MACOS-TEST.txt" <<'EOF'
+          Counseling IS macOS test build
+
+          Drag counseling_is.app to Applications and open it.
+          If macOS blocks this unsigned test build, remove quarantine from
+          the copied app with:
+
+            xattr -dr com.apple.quarantine /Applications/counseling_is.app
+
+          Use fictional data only. This test build is not notarized or for
+          production use.
+          EOF
+          hdiutil create \
+            -volname "Counseling IS Test" \
+            -srcfolder "$stage" \
+            -ov \
+            -format UDZO \
+            "build/macos-test/CounselingIS-macOS-Test.dmg"
 
       - name: Publish temporary DMG
         uses: actions/upload-artifact@v4
         with:
           name: CounselingIS-macOS-test
-          path: build/dmg/*.dmg
+          path: build/macos-test/*.dmg
           if-no-files-found: error
           retention-days: 3
