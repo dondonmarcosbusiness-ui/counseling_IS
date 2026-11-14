@@ -1,29 +1,55 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
-import 'package:counseling_is/main.dart';
-import 'package:flutter/material.dart';
+import 'package:counseling_is/app.dart';
+import 'package:counseling_is/core/widgets/app_logo.dart';
+import 'package:counseling_is/features/auth/application/auth_controller.dart';
+import 'package:counseling_is/features/auth/data/auth_repository.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+import 'helpers/test_db.dart';
+
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('boots to setup screen when no admin exists', (tester) async {
+    final db = await openTestDatabase();
+    final auth = AuthController(AuthRepository(db));
+    await auth.init();
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    await tester.pumpWidget(CounselingApp(
+      authController: auth,
+      db: db,
+      dbPath: ':memory:',
+    ));
+    await tester.pumpAndSettle();
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    expect(find.text('Initial setup'), findsOneWidget);
+    expect(find.text('Create account'), findsOneWidget);
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+    auth.dispose();
+    await db.close();
+  });
+
+  testWidgets('boots to login screen when admin exists', (tester) async {
+    final db = await openTestDatabase();
+    final repo = AuthRepository(db);
+    // bcrypt hashes in a background isolate: real async needs runAsync.
+    await tester.runAsync(() => repo.createAdmin(
+          username: 'admin',
+          fullName: 'Test Admin',
+          password: 'Password123',
+        ));
+    final auth = AuthController(repo);
+    await auth.init();
+
+    await tester.pumpWidget(CounselingApp(
+      authController: auth,
+      db: db,
+      dbPath: ':memory:',
+    ));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Administrator sign in'), findsOneWidget);
+    expect(find.text('Sign in'), findsOneWidget);
+    expect(find.byType(AppLogo), findsOneWidget);
+
+    auth.dispose();
+    await db.close();
   });
 }
