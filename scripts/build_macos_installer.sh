@@ -47,6 +47,13 @@ VERSION="${VERSION%%+*}"
 
 APP_DIR="build/macos/Build/Products/Release"
 APP="$APP_DIR/$APP_PRODUCT_NAME.app"
+DMG_DIR="${DMG_DIR:-build/dmg}"
+DMG="$DMG_DIR/$APP_DISPLAY_NAME-$VERSION.dmg"
+
+log "Building release app (version $VERSION)"
+flutter pub get
+flutter build macos --release
+[[ -d "$APP" ]] || die "expected app not found at $APP"
 # Newer Flutter releases embed flutter_assets inside App.framework;
 # older layouts keep them under Contents/Resources.
 if [[ -d "$APP/Contents/Frameworks/App.framework/Resources/flutter_assets" ]]; then
@@ -55,13 +62,6 @@ else
   FLUTTER_ASSETS="$APP/Contents/Resources/flutter_assets"
 fi
 [[ -d "$FLUTTER_ASSETS" ]] || die "flutter_assets not found in $APP"
-DMG_DIR="${DMG_DIR:-build/dmg}"
-DMG="$DMG_DIR/$APP_DISPLAY_NAME-$VERSION.dmg"
-
-log "Building release app (version $VERSION)"
-flutter pub get
-flutter build macos --release
-[[ -d "$APP" ]] || die "expected app not found at $APP"
 for asset in \
   assets/forms/branding/carranglan_school_seal.png \
   assets/forms/branding/deped_seal.png \
