@@ -41,7 +41,7 @@ jobs:
         run: |
           set -euo pipefail
           app="build/macos/Build/Products/Release/counseling_is.app"
-          assets="$app/Contents/Resources/flutter_assets"
+          assets="$app/Contents/Frameworks/App.framework/Resources/flutter_assets"
           [[ -d "$app" ]]
           for asset in \
             assets/forms/branding/carranglan_school_seal.png \
