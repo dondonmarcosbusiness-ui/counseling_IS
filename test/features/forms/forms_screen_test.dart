@@ -603,6 +603,14 @@ void main() {
         dateOfBirth: DateTime(2010, 1, 15),
       ),
     );
+    await ClientRepository(db).create(
+      CreateClientInput(
+        firstName: 'Maya',
+        lastName: 'Santos',
+        phone: '09987654321',
+        dateOfBirth: DateTime(2009, 3, 5),
+      ),
+    );
     await tester.pumpWidget(
       MultiProvider(
         providers: [
@@ -676,6 +684,35 @@ void main() {
       '09171234567',
     );
     expect(find.text('Jan 15, 2010'), findsOneWidget);
+
+    await tester.tap(clientDropdown);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Maya Santos').last);
+    await tester.pumpAndSettle();
+    expect(tester.widget<TextField>(firstNameField).controller!.text, 'Alex');
+    expect(tester.widget<TextField>(lastNameField).controller!.text, 'Santos');
+    expect(
+      tester.widget<TextField>(contactField).controller!.text,
+      '09987654321',
+    );
+    expect(find.text('Mar 5, 2009'), findsOneWidget);
+    final today = DateTime.now();
+    final expectedAge =
+        today.year -
+        2009 -
+        (today.month < 3 || (today.month == 3 && today.day < 5) ? 1 : 0);
+    final ageField = find
+        .descendant(
+          of: find
+              .ancestor(of: find.text('Age'), matching: find.byType(AppField))
+              .first,
+          matching: find.byType(TextField),
+        )
+        .first;
+    expect(
+      tester.widget<TextField>(ageField).controller!.text,
+      expectedAge.toString(),
+    );
 
     const femaleCheckbox = ValueKey('sex_Female');
     final checkboxFinder = find.byKey(femaleCheckbox);

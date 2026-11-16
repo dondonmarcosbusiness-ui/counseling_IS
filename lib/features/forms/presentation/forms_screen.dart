@@ -785,6 +785,8 @@ class _CounselingFormPageState extends State<CounselingFormPage> {
   final _repeatableEntries =
       <String, List<Map<String, TextEditingController>>>{};
   final _checks = <String, bool>{};
+  final _autoFilledTextValues = <String, String>{};
+  final _autoFilledDates = <String, DateTime>{};
   List<Client> _clients = [];
   int? _clientId;
   bool _clientsLoading = true;
@@ -971,7 +973,7 @@ class _CounselingFormPageState extends State<CounselingFormPage> {
             .where((client) => client.id == _clientId)
             .firstOrNull;
         if (linkedClient != null) {
-          _applyClientToBlankFields(linkedClient);
+          _applyClientToStudentFields(linkedClient);
         }
         setState(() {
           _clients = clients;
@@ -992,35 +994,102 @@ class _CounselingFormPageState extends State<CounselingFormPage> {
     final client = _clients.where((item) => item.id == clientId).firstOrNull;
     setState(() {
       _clientId = clientId;
-      if (client != null) _applyClientToBlankFields(client);
+      if (client != null) _applyClientToStudentFields(client);
     });
   }
 
-  void _applyClientToBlankFields(Client client) {
+  void _applyClientToStudentFields(Client client) {
     const identityNameGroups = {'student_name', 'learner_name', 'client_name'};
-    final nameParts = _legacyNameParts(client.fullName);
+    final legacyNameParts = _legacyNameParts(client.fullName);
+    final nameParts = {
+      FormNamePart.first: _clientNamePart(
+        client.firstName,
+        legacyNameParts,
+        FormNamePart.first,
+      ),
+      FormNamePart.middle: _clientNamePart(
+        client.middleName,
+        legacyNameParts,
+        FormNamePart.middle,
+      ),
+      FormNamePart.last: _clientNamePart(
+        client.lastName,
+        legacyNameParts,
+        FormNamePart.last,
+      ),
+      FormNamePart.suffix: _clientNamePart(
+        client.suffix,
+        legacyNameParts,
+        FormNamePart.suffix,
+      ),
+    };
 
     for (final section in widget.form.sections) {
       for (final question in section.questions) {
         final controller = _textControllers[question.id];
-        if (controller != null && controller.text.trim().isEmpty) {
+        if (controller != null) {
+          String? value;
           if (question.nameGroup != null &&
               identityNameGroups.contains(question.nameGroup)) {
-            controller.text = nameParts[question.namePart] ?? '';
-          } else if (question.id == 'contact_number' &&
-              client.phone?.trim().isNotEmpty == true) {
-            controller.text = client.phone!;
-          } else if (question.id == 'age' && client.dateOfBirth != null) {
-            controller.text = _clientAge(client.dateOfBirth!).toString();
+            value = nameParts[question.namePart];
+          } else if (identityNameGroups.contains(question.id)) {
+            value = client.fullName;
+          } else if (question.id == 'contact_number') {
+            value = client.phone ?? '';
+          } else if (question.id == 'age') {
+            value = client.dateOfBirth == null
+                ? ''
+                : _clientAge(client.dateOfBirth!).toString();
+          }
+          if (value != null) {
+            _applyAutoFilledText(question.id, controller, value);
           }
         }
 
         if (question.type == FormInputType.date &&
-            question.id == 'date_of_birth' &&
-            _dates[question.id] == null) {
-          _dates[question.id] = client.dateOfBirth;
+            question.id == 'date_of_birth') {
+          final previousValue = _autoFilledDates[question.id];
+          final currentValue = _dates[question.id];
+          if (currentValue == null || currentValue == previousValue) {
+            _dates[question.id] = client.dateOfBirth;
+            if (client.dateOfBirth == null) {
+              _autoFilledDates.remove(question.id);
+            } else {
+              _autoFilledDates[question.id] = client.dateOfBirth!;
+            }
+          } else {
+            _autoFilledDates.remove(question.id);
+          }
         }
       }
+    }
+  }
+
+  String _clientNamePart(
+    String? value,
+    Map<FormNamePart, String> legacyParts,
+    FormNamePart part,
+  ) {
+    final trimmed = value?.trim();
+    return trimmed == null || trimmed.isEmpty ? legacyParts[part]! : trimmed;
+  }
+
+  void _applyAutoFilledText(
+    String fieldId,
+    TextEditingController controller,
+    String value,
+  ) {
+    final currentValue = controller.text.trim();
+    final previousValue = _autoFilledTextValues[fieldId];
+    if (currentValue.isEmpty || currentValue == previousValue) {
+      controller.text = value;
+      if (value.trim().isEmpty) {
+        _autoFilledTextValues.remove(fieldId);
+      } else {
+        _autoFilledTextValues[fieldId] = value;
+      }
+    } else {
+      _autoFilledTextValues.remove(fieldId);
     }
   }
 
