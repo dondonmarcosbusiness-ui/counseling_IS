@@ -19,6 +19,16 @@ records. The Windows app stores its data in a local SQLite database.
   target dates, and outcomes; custom intervention types can be specified
 - Student forms (11 templates plus a confidential child-protection intake
   workflow) with PDF export and system printing
+- Batch fill: merge several student forms into one page, fill them together
+  and save them as a single grouped batch
+- Saved forms grouped by student: one row per student, whose name opens a
+  print-ready preview of every form saved for them
+- Any student's Individual Student Information Sheet can be previewed and
+  printed straight from the Students list or their detail window, filled from
+  the record itself — no saved form required. The preview fills the actual
+  Word template and renders it through Microsoft Word when it is available,
+  so the sheet keeps the exact DepEd layout, logos and typography; the
+  built-in PDF renderer is used as a fallback when Word is unavailable
 - Searchable audit log for account and record changes; confidential form
   contents and counseling notes are not copied into audit details
 - Reports for students, appointments and sessions with date-range
@@ -45,6 +55,29 @@ The **Student Forms** section digitizes the 11 provided templates:
 Saved form records can be edited, searched, filtered by form type, and
 optionally linked to a student. Form records are stored in the local database
 and included in database backups.
+
+The list itself groups linked records by student, so a name is never repeated
+across rows. Clicking the student's name opens a preview window with all of
+that student's forms combined into one print-ready PDF, ready to print or
+share, with the per-form open and delete actions moved into that window.
+Records saved without a student keep their own row. The Forms cell lists only
+the newest form and collapses the rest into a **+N more** link that opens
+the same preview, so a row stays one line tall no matter how many forms a
+student has.
+
+### Batch fill
+
+**Batch fill** (sidebar) fills several templates for one student on a single
+merged page. Shared student details — name, grade & section, sex, age,
+address, parent/guardian contact — appear once at the top; each chosen form's
+own sections follow under a `<document number> · <title>` banner. One **Save
+all** action writes separate records grouped under a shared batch id, skips
+forms left blank, and updates an existing record for the same student and
+form instead of duplicating it. Batches can be reopened from **Saved
+batches**, and **Save as PDF** exports the whole batch as one combined PDF
+(the Word exact-layout print stays per form and is hidden in batch mode).
+The confidential Child Protection Intake and the retired CC Form 1 are not
+offered in the batch picker.
 
 The separate Child Protection Intake workflow is an internal intake aid, not
 an official DepEd DO 40 s. 2012 form. It is marked confidential; follow current
@@ -103,6 +136,8 @@ The per-user installer (no admin rights required) is written to
 to `%LOCALAPPDATA%\Programs\Counseling IS` with a Start Menu shortcut,
 an optional desktop icon and a full uninstaller. The build verifies the PDF
 fonts and form branding assets are in the release bundle before packaging.
+Windows builds are also available as a downloadable artifact from the
+`Windows Installer` GitHub Actions workflow.
 
 ### Build a macOS installer
 

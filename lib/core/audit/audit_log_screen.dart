@@ -17,6 +17,8 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
   final _searchController = TextEditingController();
   String _query = '';
   late Future<List<AuditLogEntry>> _future;
+  int? _sortColumnIndex;
+  bool _sortAscending = true;
 
   @override
   void initState() {
@@ -36,6 +38,13 @@ class _AuditLogScreenState extends State<AuditLogScreen> {
   void _refresh() {
     setState(() {
       _future = _load();
+    });
+  }
+
+  void _onSort(int columnIndex, bool ascending) {
+    setState(() {
+      _sortColumnIndex = columnIndex;
+      _sortAscending = ascending;
     });
   }
 

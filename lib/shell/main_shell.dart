@@ -21,6 +21,7 @@ const kNavItems = [
   NavItem('/sessions', 'Counseling Sessions', Icons.history_edu_outlined),
   NavItem('/interventions', 'Interventions', Icons.volunteer_activism_outlined),
   NavItem('/forms', 'Student Forms', Icons.description_outlined),
+  NavItem('/forms/batch', 'Batch Fill Forms', Icons.layers_outlined),
   NavItem(
     '/forms/child_protection_intake',
     'Child Protection Intake',
@@ -195,7 +196,8 @@ class _Sidebar extends StatelessWidget {
                         location == item.route ||
                         (item.route == '/forms' &&
                             location.startsWith('/forms/') &&
-                            location != '/forms/child_protection_intake'),
+                            location != '/forms/child_protection_intake' &&
+                            location != '/forms/batch'),
                     compact: compact,
                     onTap: () {
                       context.read<AuthController>().noteActivity();

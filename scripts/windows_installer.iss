@@ -18,10 +18,14 @@
 AppId={{3AE78FEB-A649-42FF-A735-3E1DFDFE2AC7}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
+AppPublisher=Carranglan National High School
+AppPublisherURL=https://github.com/dondonmarcosbusiness-ui/counseling_IS
+AppCopyright=Copyright (C) 2026 Counseling IS
 DefaultDirName={localappdata}\Programs\{#MyAppName}
 DefaultGroupName={#MyAppName}
 UninstallDisplayIcon={app}\{#MyAppExeName}
 PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=dialog
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 OutputBaseFilename=CounselingIS-Setup-{#MyAppVersion}
@@ -32,6 +36,7 @@ SolidCompression=yes
 WizardStyle=modern
 CloseApplications=yes
 DisableProgramGroupPage=yes
+Uninstallable=yes
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"

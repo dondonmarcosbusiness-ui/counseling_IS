@@ -167,7 +167,11 @@ class CounselingForm {
       sections.fold(0, (total, section) => total + section.questions.length);
 }
 
-final counselingFormCatalog = <CounselingForm>[
+/// CC Form 1 · Student Information Sheet is retired from the Student Forms
+/// tabs: new students are registered through the New student dialog, which
+/// mirrors this sheet. The definition is kept so already-saved submissions,
+/// DOCX/PDF exporters and `/forms/:formId` deep links keep resolving.
+final retiredCounselingForms = <CounselingForm>[
   CounselingForm(
     id: 'student_information',
     documentNo: 'CC Form 1',
@@ -292,6 +296,10 @@ final counselingFormCatalog = <CounselingForm>[
       ),
     ],
   ),
+];
+
+/// Forms offered on the Student Forms screen.
+final counselingFormCatalog = <CounselingForm>[
   CounselingForm(
     id: 'counseling_intake',
     documentNo: 'GS Form 2',
@@ -485,7 +493,6 @@ final counselingFormCatalog = <CounselingForm>[
             anchor: 'Referring person',
           ),
           FormQuestion.text('designation', 'Designation'),
-          FormQuestion.text('department', 'Department / subject area'),
           FormQuestion.text('referrer_contact', 'Contact number'),
           FormQuestion.date('referral_date', 'Date referred'),
         ],
@@ -1116,6 +1123,10 @@ final counselingFormCatalog = <CounselingForm>[
 
 CounselingForm? counselingFormById(String id) {
   for (final form in counselingFormCatalog) {
+    if (form.id == id) return form;
+  }
+  // Retired forms stay resolvable for existing records and deep links.
+  for (final form in retiredCounselingForms) {
     if (form.id == id) return form;
   }
   return null;

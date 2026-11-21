@@ -6,9 +6,11 @@ import 'package:counseling_is/features/forms/data/form_submission_repository.dar
 import 'package:counseling_is/features/forms/domain/counseling_form.dart';
 import 'package:counseling_is/features/forms/domain/form_submission.dart';
 import 'package:counseling_is/features/forms/presentation/forms_screen.dart';
+import 'package:counseling_is/features/forms/presentation/student_forms_preview_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:go_router/go_router.dart';
+import 'package:printing/printing.dart';
 import 'package:provider/provider.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
@@ -74,8 +76,8 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('Available forms'), findsOneWidget);
-    expect(find.byType(Tab), findsNWidgets(12));
-    expect(find.text('CC Form 1 · Student Information Sheet'), findsWidgets);
+    expect(find.byType(Tab), findsNWidgets(11));
+    expect(find.text('GS Form 2 · Counseling Intake Form'), findsWidgets);
     expect(find.text('Save form'), findsOneWidget);
     expect(find.byKey(const ValueKey('sex_Male')), findsOneWidget);
     expect(find.byKey(const ValueKey('sex_Female')), findsOneWidget);
@@ -101,7 +103,7 @@ void main() {
       greaterThan(1000),
     );
     await tester.enterText(
-      find.byKey(const ValueKey('student_name_first')),
+      find.byKey(const ValueKey('learner_name_first')),
       'Alex',
     );
     expect(find.text('First name'), findsWidgets);
@@ -113,7 +115,7 @@ void main() {
     expect(find.text('Saved forms'), findsWidgets);
     expect(find.byType(DataTable), findsOneWidget);
     expect(find.text('Last saved'), findsOneWidget);
-    expect(find.text('Student Information Sheet'), findsOneWidget);
+    expect(find.text('Counseling Intake Form'), findsOneWidget);
 
     await tester.tap(find.text('Fill form'));
     await tester.pumpAndSettle();
@@ -158,6 +160,43 @@ void main() {
     expect(find.text('Available forms'), findsNothing);
   });
 
+  testWidgets('tapping a retired student information sheet shows a notice', (
+    tester,
+  ) async {
+    final submissions = FormSubmissionRepository(db);
+    await submissions.create(
+      formId: 'student_information',
+      data: const {'student_name': 'Aisha Rahman'},
+    );
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<ClientRepository>(create: (_) => ClientRepository(db)),
+          Provider<FormSubmissionRepository>.value(value: submissions),
+        ],
+        child: const MaterialApp(home: Scaffold(body: FormsScreen())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Saved records stay listed, but the sheet is no longer a fillable tab.
+    expect(find.text('Student Information Sheet'), findsOneWidget);
+    expect(find.text('CC Form 1 · Student Information Sheet'), findsNothing);
+
+    await tester.tap(find.text('Student Information Sheet'));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(SnackBar), findsOneWidget);
+    expect(
+      find.text(
+        'The Student Information Sheet is no longer filled here. '
+        'New students are registered through the New student form.',
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('No saved forms yet'), findsNothing);
+  });
+
   testWidgets('tabs switch the inline form and pinning prevents switching', (
     tester,
   ) async {
@@ -177,16 +216,18 @@ void main() {
     await tester.tap(find.text('Fill form'));
     await tester.pumpAndSettle();
 
-    final secondTab = find.text('GS Form 2 · Counseling Intake Form').first;
+    final secondTab = find
+        .text('CC Form 3 · Individual Counseling Record')
+        .first;
     await tester.ensureVisible(secondTab);
     await tester.pumpAndSettle();
     await tester.tap(secondTab);
     await tester.pumpAndSettle();
-    expect(find.text('GS Form 2 · Counseling Intake Form'), findsWidgets);
+    expect(find.text('CC Form 3 · Individual Counseling Record'), findsWidgets);
 
     await tester.tap(find.byTooltip('Pin form tab'));
     await tester.pumpAndSettle();
-    final firstTab = find.text('CC Form 1 · Student Information Sheet').first;
+    final firstTab = find.text('GS Form 2 · Counseling Intake Form').first;
     await tester.ensureVisible(firstTab);
     await tester.pumpAndSettle();
     await tester.tap(firstTab);
@@ -585,12 +626,154 @@ void main() {
 
     await tester.tap(find.text('Delete (1)'));
     await tester.pumpAndSettle();
-    expect(find.text('Delete selected forms?'), findsOneWidget);
+    expect(find.text('Delete saved form?'), findsOneWidget);
     await tester.tap(find.widgetWithText(FilledButton, 'Delete'));
     await tester.pumpAndSettle();
 
     expect(await submissions.list(), isEmpty);
     expect(find.text('No saved forms yet'), findsOneWidget);
+  });
+
+  testWidgets('groups saved forms by student and previews them for printing', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(1400, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final client = await ClientRepository(db)
+        .create(const CreateClientInput(fullName: 'Aira Garcia Navarro'));
+    final submissions = FormSubmissionRepository(db);
+    await submissions.create(
+      formId: 'counseling_intake',
+      clientId: client.id,
+      data: const {'grade_section': 'Grade 8 - Sampaguita'},
+    );
+    await submissions.create(
+      formId: 'individual_counseling',
+      clientId: client.id,
+      data: const {'session_count': '2'},
+    );
+    // A record saved without a student keeps its own row.
+    await submissions.create(
+      formId: 'student_information',
+      data: const {'student_name': 'Unlinked Student'},
+    );
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<ClientRepository>(create: (_) => ClientRepository(db)),
+          Provider<FormSubmissionRepository>.value(value: submissions),
+        ],
+        child: const MaterialApp(home: Scaffold(body: FormsScreen())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // One row per student instead of one row per form.
+    expect(find.text('Aira Garcia Navarro'), findsOneWidget);
+    expect(find.text('2 saved forms'), findsOneWidget);
+    expect(find.text('No linked student'), findsOneWidget);
+    expect(find.text('Student Information Sheet'), findsOneWidget);
+
+    // Tapping the name opens a preview window with every one of its forms.
+    await tester.tap(find.text('Aira Garcia Navarro'));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byType(StudentFormsPreviewDialog), findsOneWidget);
+    expect(find.byType(PdfPreview), findsOneWidget);
+    expect(find.text('2 saved forms · ready to print'), findsOneWidget);
+    expect(find.text('GS Form 2 · Counseling Intake Form'), findsOneWidget);
+    expect(
+      find.text('CC Form 3 · Individual Counseling Record'),
+      findsOneWidget,
+    );
+    expect(find.byTooltip('Close preview'), findsOneWidget);
+
+    await tester.tap(find.byTooltip('Close preview'));
+    await tester.pumpAndSettle();
+    expect(find.byType(StudentFormsPreviewDialog), findsNothing);
+
+    // The row checkbox still selects every form behind the student.
+    final rowCheckboxes = find.descendant(
+      of: find.byType(DataTable),
+      matching: find.byType(Checkbox),
+    );
+    await tester.ensureVisible(rowCheckboxes.last);
+    await tester.pumpAndSettle();
+    await tester.tap(rowCheckboxes.last);
+    await tester.pumpAndSettle();
+
+    expect(find.text('2 selected'), findsOneWidget);
+    expect(find.text('Delete (2)'), findsOneWidget);
+  });
+
+  testWidgets('lists only the newest form and links the rest', (tester) async {
+    tester.view.physicalSize = const Size(1400, 1400);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    final client = await ClientRepository(db)
+        .create(const CreateClientInput(fullName: 'Bianca Flores'));
+    final submissions = FormSubmissionRepository(db);
+    for (final formId in [
+      'counseling_intake',
+      'individual_counseling',
+      'informed_consent',
+      'care_center_log',
+    ]) {
+      await submissions.create(
+        formId: formId,
+        clientId: client.id,
+        data: const {},
+      );
+    }
+
+    await tester.pumpWidget(
+      MultiProvider(
+        providers: [
+          Provider<ClientRepository>(create: (_) => ClientRepository(db)),
+          Provider<FormSubmissionRepository>.value(value: submissions),
+        ],
+        child: const MaterialApp(home: Scaffold(body: FormsScreen())),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Only the newest form is listed; the rest collapse into a link.
+    expect(find.text('Bianca Flores'), findsOneWidget);
+    expect(find.text('4 saved forms'), findsOneWidget);
+    expect(find.text('Care Center Visit Log Sheet'), findsOneWidget);
+    expect(find.text('Informed Consent for Counseling Services'), findsNothing);
+    expect(find.text('Individual Counseling Record'), findsNothing);
+    expect(find.text('Counseling Intake Form'), findsNothing);
+    expect(find.text('+3 more'), findsOneWidget);
+
+    // The link opens the preview holding all four forms.
+    await tester.tap(find.text('+3 more'));
+    await tester.pump();
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+
+    expect(find.byType(StudentFormsPreviewDialog), findsOneWidget);
+    expect(
+      find.text('CC Form 10 · Care Center Visit Log Sheet'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('CC Form 9 · Informed Consent for Counseling Services'),
+      findsOneWidget,
+    );
+    expect(
+      find.text('CC Form 3 · Individual Counseling Record'),
+      findsOneWidget,
+    );
+    expect(find.text('GS Form 2 · Counseling Intake Form'), findsOneWidget);
   });
 
   testWidgets('form dropdown opens below its field and selects value', (

@@ -10,6 +10,7 @@ import 'package:counseling_is/features/clients/data/client_repository.dart';
 import 'package:counseling_is/features/clients/domain/client.dart';
 import 'package:counseling_is/features/clients/presentation/client_detail_dialog.dart';
 import 'package:counseling_is/features/clients/presentation/client_form_dialog.dart';
+import 'package:counseling_is/features/clients/presentation/student_sheet_preview_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
@@ -22,11 +23,17 @@ class ClientsScreen extends StatefulWidget {
 
 class _ClientsScreenState extends State<ClientsScreen> {
   final _searchController = TextEditingController();
+  // The school has ~1,600 learners; the table shows them one page at a time
+  // so the list stays fast.
+  static const _pageSize = 50;
+  int _page = 0;
   String _query = '';
   ClientStatus? _statusFilter;
   final Set<int> _selectedClientIds = {};
   String? _batchError;
   late Future<List<Client>> _future;
+  int? _sortColumnIndex;
+  bool _sortAscending = true;
 
   @override
   void initState() {
@@ -58,6 +65,13 @@ class _ClientsScreenState extends State<ClientsScreen> {
     });
   }
 
+  void _onSort(int columnIndex, bool ascending) {
+    setState(() {
+      _sortColumnIndex = columnIndex;
+      _sortAscending = ascending;
+    });
+  }
+
   Future<void> _newClient() async {
     final saved = await showDialog<bool>(
       context: context,
@@ -80,6 +94,12 @@ class _ClientsScreenState extends State<ClientsScreen> {
       builder: (_) => ClientDetailDialog(client: client),
     );
     if (changed == true) _refresh();
+  }
+
+  /// Opens the print-ready Individual Student Information Sheet for one
+  /// student, filled from their record.
+  Future<void> _previewSheet(Client client) {
+    return StudentSheetPreviewDialog.show(context, client: client);
   }
 
   void _toggleClientSelection(int? clientId, bool? selected) {
@@ -151,8 +171,8 @@ class _ClientsScreenState extends State<ClientsScreen> {
       message:
           'This will permanently delete ${clientsToDelete.length} '
           'selected student${clientsToDelete.length == 1 ? '' : 's'}. '
-            'Students with linked records cannot be deleted; archive them '
-            'instead.',
+          'Students with linked records cannot be deleted; archive them '
+          'instead.',
       confirmLabel: 'Delete',
       destructive: true,
     );
@@ -224,6 +244,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
                     ),
                     onChanged: (value) => setState(() {
                       _query = value;
+                      _page = 0;
                       _selectedClientIds.clear();
                       _batchError = null;
                       _future = _load();
@@ -252,6 +273,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
                   ],
                   onChanged: (value) => setState(() {
                     _statusFilter = value;
+                    _page = 0;
                     _selectedClientIds.clear();
                     _batchError = null;
                     _future = _load();
@@ -365,7 +387,13 @@ class _ClientsScreenState extends State<ClientsScreen> {
                     onAction: _isFiltered ? null : _newClient,
                   );
                 }
-                return Card(
+                final lastPage = (clients.length - 1) ~/ _pageSize;
+                final page = _page > lastPage ? lastPage : _page;
+                final pageClients = clients
+                    .skip(page * _pageSize)
+                    .take(_pageSize)
+                    .toList();
+                final table = Card(
                   clipBehavior: Clip.antiAlias,
                   child: AppDataTable(
                     showCheckboxColumn: true,
@@ -378,7 +406,7 @@ class _ClientsScreenState extends State<ClientsScreen> {
                       DataColumn(label: Text('Actions')),
                     ],
                     rows: [
-                      for (final client in clients)
+                      for (final client in pageClients)
                         DataRow(
                           key: ValueKey(client.id),
                           selected: _selectedClientIds.contains(client.id),
@@ -403,16 +431,61 @@ class _ClientsScreenState extends State<ClientsScreen> {
                               ),
                             ),
                             DataCell(
-                              IconButton(
-                                onPressed: () => _editClient(client),
-                                icon: const Icon(Icons.edit_outlined),
-                                tooltip: 'Edit student',
+                              Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  IconButton(
+                                    onPressed: () => _previewSheet(client),
+                                    icon: const Icon(
+                                      Icons.picture_as_pdf_outlined,
+                                    ),
+                                    tooltip: 'Preview information sheet',
+                                  ),
+                                  IconButton(
+                                    onPressed: () => _editClient(client),
+                                    icon: const Icon(Icons.edit_outlined),
+                                    tooltip: 'Edit student',
+                                  ),
+                                ],
                               ),
                             ),
                           ],
                         ),
                     ],
                   ),
+                );
+                if (clients.length <= _pageSize) return table;
+                return Column(
+                  children: [
+                    Expanded(child: table),
+                    Padding(
+                      padding: const EdgeInsets.only(top: AppSpacing.sm),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.end,
+                        children: [
+                          Text(
+                            '${page * _pageSize + 1}–'
+                            '${page * _pageSize + pageClients.length} '
+                            'of ${clients.length} students',
+                          ),
+                          IconButton(
+                            onPressed: page == 0
+                                ? null
+                                : () => setState(() => _page = page - 1),
+                            icon: const Icon(Icons.chevron_left),
+                            tooltip: 'Previous page',
+                          ),
+                          IconButton(
+                            onPressed: page >= lastPage
+                                ? null
+                                : () => setState(() => _page = page + 1),
+                            icon: const Icon(Icons.chevron_right),
+                            tooltip: 'Next page',
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 );
               },
             ),

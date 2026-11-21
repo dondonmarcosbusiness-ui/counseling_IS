@@ -23,6 +23,8 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   AppointmentTimeFilter _timeFilter = AppointmentTimeFilter.upcoming;
   AppointmentStatus? _statusFilter;
   late Future<List<Appointment>> _future;
+  int? _sortColumnIndex;
+  bool _sortAscending = true;
 
   @override
   void initState() {
@@ -55,6 +57,13 @@ class _AppointmentsScreenState extends State<AppointmentsScreen> {
   void _refresh() {
     setState(() {
       _future = _load();
+    });
+  }
+
+  void _onSort(int columnIndex, bool ascending) {
+    setState(() {
+      _sortColumnIndex = columnIndex;
+      _sortAscending = ascending;
     });
   }
 

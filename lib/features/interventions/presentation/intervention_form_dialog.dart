@@ -25,6 +25,7 @@ class _InterventionFormDialogState extends State<InterventionFormDialog> {
   static const _types = [
     'Individual counseling',
     'Group counseling',
+    'Group dynamics',
     'Parent conference',
     'Referral',
     'Behavior support',
@@ -50,7 +51,9 @@ class _InterventionFormDialogState extends State<InterventionFormDialog> {
   DateTime? _targetDate;
 
   bool get _isEdit => widget.intervention != null;
-  bool get _isGroup => _type == 'Group counseling';
+  static const _groupTypes = {'Group counseling', 'Group dynamics'};
+
+  bool get _isGroup => _groupTypes.contains(_type);
   bool get _isOther => _type == 'Other';
 
   @override
@@ -422,7 +425,7 @@ class _InterventionFormDialogState extends State<InterventionFormDialog> {
                           if (value != null) {
                             setState(() {
                               if (_isGroup &&
-                                  value != 'Group counseling' &&
+                                  !_groupTypes.contains(value) &&
                                   _selectedClientIds.length > 1) {
                                 final primary = _selectedClientIds.first;
                                 _selectedClientIds

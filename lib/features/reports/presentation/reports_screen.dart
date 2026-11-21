@@ -34,6 +34,8 @@ class _ReportsScreenState extends State<ReportsScreen> {
   bool _loading = true;
   ReportTable? _result;
   String? _error;
+  int? _sortColumnIndex;
+  bool _sortAscending = true;
 
   @override
   void initState() {
@@ -120,6 +122,13 @@ class _ReportsScreenState extends State<ReportsScreen> {
       _to = null;
     });
     await _refresh();
+  }
+
+  void _onSort(int columnIndex, bool ascending) {
+    setState(() {
+      _sortColumnIndex = columnIndex;
+      _sortAscending = ascending;
+    });
   }
 
   String _title() => '${_type.label} report';

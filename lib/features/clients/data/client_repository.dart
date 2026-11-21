@@ -15,6 +15,42 @@ class CreateClientInput {
     this.email,
     this.dateOfBirth,
     this.intakeNotes,
+    this.gradeSection,
+    this.learnerNo,
+    this.sex,
+    this.religion,
+    this.address,
+    this.memberTags,
+    this.hobbies,
+    this.emergencyName,
+    this.emergencyContactNo,
+    this.emergencyAddress,
+    this.emergencyJob,
+    this.emergencyRelationship,
+    this.fatherName,
+    this.fatherAge,
+    this.fatherJob,
+    this.fatherWorkplace,
+    this.fatherEducation,
+    this.motherName,
+    this.motherAge,
+    this.motherJob,
+    this.motherWorkplace,
+    this.motherEducation,
+    this.guardianName,
+    this.guardianAge,
+    this.guardianJob,
+    this.guardianWorkplace,
+    this.guardianRelationship,
+    this.livingWith,
+    this.familyIncome,
+    this.parentsStatus,
+    this.parentsStatusDetail,
+    this.screenNoAppetite,
+    this.screenCriesOften,
+    this.screenAbuse,
+    this.screenSelfBlame,
+    this.screenSuicidalThoughts,
   });
 
   final String? fullName;
@@ -26,6 +62,42 @@ class CreateClientInput {
   final String? email;
   final DateTime? dateOfBirth;
   final String? intakeNotes;
+  final String? gradeSection;
+  final String? learnerNo;
+  final String? sex;
+  final String? religion;
+  final String? address;
+  final String? memberTags;
+  final String? hobbies;
+  final String? emergencyName;
+  final String? emergencyContactNo;
+  final String? emergencyAddress;
+  final String? emergencyJob;
+  final String? emergencyRelationship;
+  final String? fatherName;
+  final String? fatherAge;
+  final String? fatherJob;
+  final String? fatherWorkplace;
+  final String? fatherEducation;
+  final String? motherName;
+  final String? motherAge;
+  final String? motherJob;
+  final String? motherWorkplace;
+  final String? motherEducation;
+  final String? guardianName;
+  final String? guardianAge;
+  final String? guardianJob;
+  final String? guardianWorkplace;
+  final String? guardianRelationship;
+  final String? livingWith;
+  final String? familyIncome;
+  final String? parentsStatus;
+  final String? parentsStatusDetail;
+  final String? screenNoAppetite;
+  final String? screenCriesOften;
+  final String? screenAbuse;
+  final String? screenSelfBlame;
+  final String? screenSuicidalThoughts;
 }
 
 class ClientQuery {
@@ -70,6 +142,42 @@ class ClientRepository {
             ? null
             : dateToDb(input.dateOfBirth!),
         'intake_notes': _emptyToNull(input.intakeNotes),
+        'grade_section': _emptyToNull(input.gradeSection),
+        'learner_no': _emptyToNull(input.learnerNo),
+        'sex': _emptyToNull(input.sex),
+        'religion': _emptyToNull(input.religion),
+        'address': _emptyToNull(input.address),
+        'member_tags': _emptyToNull(input.memberTags),
+        'hobbies': _emptyToNull(input.hobbies),
+        'emergency_name': _emptyToNull(input.emergencyName),
+        'emergency_contact_no': _emptyToNull(input.emergencyContactNo),
+        'emergency_address': _emptyToNull(input.emergencyAddress),
+        'emergency_job': _emptyToNull(input.emergencyJob),
+        'emergency_relationship': _emptyToNull(input.emergencyRelationship),
+        'father_name': _emptyToNull(input.fatherName),
+        'father_age': _emptyToNull(input.fatherAge),
+        'father_job': _emptyToNull(input.fatherJob),
+        'father_workplace': _emptyToNull(input.fatherWorkplace),
+        'father_education': _emptyToNull(input.fatherEducation),
+        'mother_name': _emptyToNull(input.motherName),
+        'mother_age': _emptyToNull(input.motherAge),
+        'mother_job': _emptyToNull(input.motherJob),
+        'mother_workplace': _emptyToNull(input.motherWorkplace),
+        'mother_education': _emptyToNull(input.motherEducation),
+        'guardian_name': _emptyToNull(input.guardianName),
+        'guardian_age': _emptyToNull(input.guardianAge),
+        'guardian_job': _emptyToNull(input.guardianJob),
+        'guardian_workplace': _emptyToNull(input.guardianWorkplace),
+        'guardian_relationship': _emptyToNull(input.guardianRelationship),
+        'living_with': _emptyToNull(input.livingWith),
+        'family_income': _emptyToNull(input.familyIncome),
+        'parents_status': _emptyToNull(input.parentsStatus),
+        'parents_status_detail': _emptyToNull(input.parentsStatusDetail),
+        'screen_no_appetite': _emptyToNull(input.screenNoAppetite),
+        'screen_cries_often': _emptyToNull(input.screenCriesOften),
+        'screen_abuse': _emptyToNull(input.screenAbuse),
+        'screen_self_blame': _emptyToNull(input.screenSelfBlame),
+        'screen_suicidal_thoughts': _emptyToNull(input.screenSuicidalThoughts),
         'status': ClientStatus.active.dbValue,
         'registered_at': dateTimeToDb(now),
         'updated_at': dateTimeToDb(now),
@@ -121,6 +229,44 @@ class ClientRepository {
               ? null
               : dateToDb(client.dateOfBirth!),
           'intake_notes': _emptyToNull(client.intakeNotes),
+          'grade_section': _emptyToNull(client.gradeSection),
+          'learner_no': _emptyToNull(client.learnerNo),
+          'sex': _emptyToNull(client.sex),
+          'religion': _emptyToNull(client.religion),
+          'address': _emptyToNull(client.address),
+          'member_tags': _emptyToNull(client.memberTags),
+          'hobbies': _emptyToNull(client.hobbies),
+          'emergency_name': _emptyToNull(client.emergencyName),
+          'emergency_contact_no': _emptyToNull(client.emergencyContactNo),
+          'emergency_address': _emptyToNull(client.emergencyAddress),
+          'emergency_job': _emptyToNull(client.emergencyJob),
+          'emergency_relationship': _emptyToNull(client.emergencyRelationship),
+          'father_name': _emptyToNull(client.fatherName),
+          'father_age': _emptyToNull(client.fatherAge),
+          'father_job': _emptyToNull(client.fatherJob),
+          'father_workplace': _emptyToNull(client.fatherWorkplace),
+          'father_education': _emptyToNull(client.fatherEducation),
+          'mother_name': _emptyToNull(client.motherName),
+          'mother_age': _emptyToNull(client.motherAge),
+          'mother_job': _emptyToNull(client.motherJob),
+          'mother_workplace': _emptyToNull(client.motherWorkplace),
+          'mother_education': _emptyToNull(client.motherEducation),
+          'guardian_name': _emptyToNull(client.guardianName),
+          'guardian_age': _emptyToNull(client.guardianAge),
+          'guardian_job': _emptyToNull(client.guardianJob),
+          'guardian_workplace': _emptyToNull(client.guardianWorkplace),
+          'guardian_relationship': _emptyToNull(client.guardianRelationship),
+          'living_with': _emptyToNull(client.livingWith),
+          'family_income': _emptyToNull(client.familyIncome),
+          'parents_status': _emptyToNull(client.parentsStatus),
+          'parents_status_detail': _emptyToNull(client.parentsStatusDetail),
+          'screen_no_appetite': _emptyToNull(client.screenNoAppetite),
+          'screen_cries_often': _emptyToNull(client.screenCriesOften),
+          'screen_abuse': _emptyToNull(client.screenAbuse),
+          'screen_self_blame': _emptyToNull(client.screenSelfBlame),
+          'screen_suicidal_thoughts': _emptyToNull(
+            client.screenSuicidalThoughts,
+          ),
           'status': client.status.dbValue,
           'updated_at': dateTimeToDb(now),
         },

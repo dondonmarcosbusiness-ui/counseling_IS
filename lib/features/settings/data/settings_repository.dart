@@ -10,7 +10,37 @@ class SettingsRepository {
   static const idleTimeoutMin = 1;
   static const idleTimeoutMax = 120;
 
+  static const _referralEmailPrefix = 'referral_email_';
+
   final Database _db;
+
+  /// Saved e-mail addresses for referral recipients, keyed by recipient id.
+  Future<Map<String, String>> getReferralEmails() async {
+    final rows = await _db.query(
+      'settings',
+      where: 'key LIKE ?',
+      whereArgs: ['$_referralEmailPrefix%'],
+    );
+    return {
+      for (final row in rows)
+        (row['key'] as String).substring(_referralEmailPrefix.length):
+            row['value'] as String,
+    };
+  }
+
+  Future<void> setReferralEmail(String recipientId, String email) async {
+    final key = '$_referralEmailPrefix$recipientId';
+    final trimmed = email.trim();
+    if (trimmed.isEmpty) {
+      await _db.delete('settings', where: 'key = ?', whereArgs: [key]);
+      return;
+    }
+    await _db.insert(
+      'settings',
+      {'key': key, 'value': trimmed},
+      conflictAlgorithm: ConflictAlgorithm.replace,
+    );
+  }
 
   Future<int> getIdleTimeoutMinutes() async {
     final rows = await _db.query(

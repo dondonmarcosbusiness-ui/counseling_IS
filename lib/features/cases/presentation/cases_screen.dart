@@ -23,6 +23,8 @@ class _CasesScreenState extends State<CasesScreen> {
   String _query = '';
   CaseStatus? _statusFilter;
   late Future<List<CaseRecord>> _future;
+  int? _sortColumnIndex;
+  bool _sortAscending = true;
 
   @override
   void initState() {
@@ -48,6 +50,13 @@ class _CasesScreenState extends State<CasesScreen> {
   void _refresh() {
     setState(() {
       _future = _load();
+    });
+  }
+
+  void _onSort(int columnIndex, bool ascending) {
+    setState(() {
+      _sortColumnIndex = columnIndex;
+      _sortAscending = ascending;
     });
   }
 

@@ -35,7 +35,22 @@ class FormPdfExporter {
   Future<FormPdfExport> export({
     required CounselingForm form,
     required Map<String, Object?> data,
-  }) async {
+  }) => _exportEntries([(form: form, data: data)]);
+
+  /// Renders every entry into one PDF document — the forms appear in the
+  /// given order, each keeping its own page size and orientation.
+  Future<FormPdfExport> exportBatch({
+    required List<({CounselingForm form, Map<String, Object?> data})> entries,
+  }) {
+    if (entries.isEmpty) {
+      throw ArgumentError('At least one form is required for a batch export');
+    }
+    return _exportEntries(entries);
+  }
+
+  Future<FormPdfExport> _exportEntries(
+    List<({CounselingForm form, Map<String, Object?> data})> entries,
+  ) async {
     final schoolSealData = await rootBundle.load(_schoolSealAsset);
     final depedSealData = await rootBundle.load(_depedSealAsset);
     final footerBannerData = await rootBundle.load(_footerBannerAsset);
@@ -59,33 +74,39 @@ class FormPdfExporter {
         footerBannerData.lengthInBytes,
       ),
     );
-    final pageFormat = _pageFormatFor(form.id);
     final document = pw.Document();
 
-    document.addPage(
-      pw.MultiPage(
-        pageFormat: pageFormat,
-        margin: _pageMarginsFor(form.id),
-        theme: pw.ThemeData.withFont(
-          base: pw.Font.ttf(regularFontData),
-          bold: pw.Font.ttf(boldFontData),
-        ),
-        header: (_) => _header(form.id, schoolSeal, depedSeal),
-        footer: (_) => _footer(form.id, footerBanner),
-        build: (context) => [
-          _documentTitle(form),
-          if (form.id == 'child_protection_intake') _internalFormNotice(),
-          for (final section in form.sections) ...[
-            _sectionHeading(section.title, form.id),
-            if (section.information case final information?)
-              _information(information),
-            ..._sectionQuestions(form, section, data),
+    for (final entry in entries) {
+      final form = entry.form;
+      final data = entry.data;
+      document.addPage(
+        pw.MultiPage(
+          pageFormat: _pageFormatFor(form.id),
+          margin: _pageMarginsFor(form.id),
+          theme: pw.ThemeData.withFont(
+            base: pw.Font.ttf(regularFontData),
+            bold: pw.Font.ttf(boldFontData),
+          ),
+          header: (_) => _header(form.id, schoolSeal, depedSeal),
+          footer: (_) => _footer(form.id, footerBanner),
+          build: (context) => [
+            _documentTitle(form),
+            if (form.id == 'child_protection_intake') _internalFormNotice(),
+            for (final section in form.sections) ...[
+              _sectionHeading(section.title, form.id),
+              if (section.information case final information?)
+                _information(information),
+              ..._sectionQuestions(form, section, data),
+            ],
           ],
-        ],
-      ),
-    );
+        ),
+      );
+    }
 
-    return FormPdfExport(bytes: await document.save(), pageFormat: pageFormat);
+    return FormPdfExport(
+      bytes: await document.save(),
+      pageFormat: _pageFormatFor(entries.first.form.id),
+    );
   }
 
   static PdfPageFormat _pageFormatFor(String formId) {
@@ -129,6 +150,11 @@ class FormPdfExporter {
     );
   }
 
+  /// Space kept between the top edge of the paper and the letterhead, so the
+  /// header is not flush against the page edge (and stays inside the
+  /// unprintable area of most printers).
+  static const _headerTopSpacing = 16.0;
+
   pw.Widget _header(
     String formId,
     pw.MemoryImage schoolSeal,
@@ -149,7 +175,7 @@ class FormPdfExporter {
 
     return pw.Container(
       width: double.infinity,
-      padding: const pw.EdgeInsets.only(bottom: 4),
+      padding: const pw.EdgeInsets.only(top: _headerTopSpacing, bottom: 4),
       decoration: const pw.BoxDecoration(
         border: pw.Border(bottom: pw.BorderSide(width: 0.5)),
       ),

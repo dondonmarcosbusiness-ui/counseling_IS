@@ -52,6 +52,106 @@ void main() {
     );
   });
 
+  test('stores every field of the information sheet', () async {
+    final created = await repo.create(
+      const CreateClientInput(
+        fullName: 'Maria Clara Santos',
+        firstName: 'Maria Clara',
+        middleName: 'Reyes',
+        lastName: 'Santos',
+        gradeSection: 'Grade 9 - Sampaguita',
+        learnerNo: '123456789012',
+        sex: 'Female',
+        religion: 'Roman Catholic',
+        address: 'Purok 3, Carranglan, Nueva Ecija',
+        memberTags: '4Ps, IP',
+        hobbies: 'Reading, basketball',
+        emergencyName: 'Juan Santos',
+        emergencyContactNo: '09171234567',
+        emergencyAddress: 'Purok 3, Carranglan, Nueva Ecija',
+        emergencyJob: 'Farmer',
+        emergencyRelationship: 'Father',
+        fatherName: 'Juan Dela Santos',
+        fatherAge: '45',
+        fatherJob: 'Farmer',
+        fatherWorkplace: 'Carranglan',
+        fatherEducation: 'High School Graduate',
+        motherName: 'Rosa Reyes',
+        motherAge: '42',
+        motherJob: 'Vendor',
+        motherWorkplace: 'Carranglan market',
+        motherEducation: 'College Graduate',
+        guardianName: 'Benita Cruz',
+        guardianAge: '67',
+        guardianJob: 'None',
+        guardianWorkplace: 'Home',
+        guardianRelationship: 'Grandmother',
+        livingWith: 'Relatives',
+        familyIncome: '₱10,001 – ₱20,000',
+        parentsStatus: 'Married but separated',
+        parentsStatusDetail: 'Father lives in another town',
+        screenNoAppetite: 'No',
+        screenCriesOften: 'Yes',
+        screenAbuse: 'No',
+        screenSelfBlame: 'Yes',
+        screenSuicidalThoughts: 'No',
+      ),
+    );
+
+    final fetched = await repo.getById(created.id!);
+    expect(fetched.gradeSection, 'Grade 9 - Sampaguita');
+    expect(fetched.learnerNo, '123456789012');
+    expect(fetched.sex, 'Female');
+    expect(fetched.religion, 'Roman Catholic');
+    expect(fetched.address, 'Purok 3, Carranglan, Nueva Ecija');
+    expect(fetched.memberTags, '4Ps, IP');
+    expect(fetched.memberTagList, ['4Ps', 'IP']);
+    expect(fetched.hobbies, 'Reading, basketball');
+    expect(fetched.emergencyName, 'Juan Santos');
+    expect(fetched.emergencyContactNo, '09171234567');
+    expect(fetched.emergencyRelationship, 'Father');
+    expect(fetched.fatherName, 'Juan Dela Santos');
+    expect(fetched.fatherEducation, 'High School Graduate');
+    expect(fetched.motherName, 'Rosa Reyes');
+    expect(fetched.motherEducation, 'College Graduate');
+    expect(fetched.guardianRelationship, 'Grandmother');
+    expect(fetched.livingWith, 'Relatives');
+    expect(fetched.familyIncome, '₱10,001 – ₱20,000');
+    expect(fetched.parentsStatus, 'Married but separated');
+    expect(fetched.parentsStatusDetail, 'Father lives in another town');
+    expect(fetched.screenCriesOften, 'Yes');
+    expect(fetched.screenSuicidalThoughts, 'No');
+  });
+
+  test('update clears information sheet fields that were emptied', () async {
+    final created = await repo.create(
+      const CreateClientInput(
+        fullName: 'Temp Student',
+        gradeSection: 'Grade 10',
+        screenCriesOften: 'Yes',
+      ),
+    );
+
+    final updated = await repo.update(
+      Client(
+        id: created.id,
+        referenceNo: created.referenceNo,
+        fullName: created.fullName,
+        gradeSection: null,
+        screenCriesOften: null,
+        status: created.status,
+        registeredAt: created.registeredAt,
+        updatedAt: created.updatedAt,
+      ),
+    );
+
+    expect(updated.gradeSection, isNull);
+    expect(updated.screenCriesOften, isNull);
+    final fetched = await repo.getById(created.id!);
+    expect(fetched.gradeSection, isNull);
+    expect(fetched.screenCriesOften, isNull);
+  });
+
   test('getById returns the created client', () async {
     final created = await repo.create(
       const CreateClientInput(fullName: 'Carla Reyes'),

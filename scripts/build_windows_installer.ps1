@@ -20,9 +20,17 @@ if (-not (Get-Command flutter -ErrorAction SilentlyContinue)) {
     Fail 'flutter not found on PATH'
 }
 
+$line = Get-Content 'pubspec.yaml' | Where-Object { $_ -match '^\s*version:\s*\S' } | Select-Object -First 1
+if ($line -match '^\s*version:\s*([0-9]+\.[0-9]+\.[0-9]+)(?:\+([0-9]+))?') {
+    $version = $Matches[1]
+    $buildNumber = if ($Matches[2]) { $Matches[2] } else { '1' }
+} else {
+    Fail 'could not read version from pubspec.yaml'
+}
+
 Write-Host ''
 Write-Host '==> Building release app'
-flutter build windows --release
+flutter build windows --release --build-name "$version" --build-number "$buildNumber"
 if ($LASTEXITCODE -ne 0) { Fail "flutter build windows failed (exit $LASTEXITCODE)" }
 
 $releaseDir = 'build\windows\x64\runner\Release'
@@ -42,13 +50,6 @@ foreach ($asset in $requiredAssets) {
     if (-not (Test-Path (Join-Path $flutterAssets $asset))) {
         Fail "required PDF asset missing from Windows release: $asset"
     }
-}
-
-$line = Get-Content 'pubspec.yaml' | Where-Object { $_ -match '^\s*version:\s*\S' } | Select-Object -First 1
-if ($line -match '^\s*version:\s*(\d+\.\d+\.\d+)') {
-    $version = $Matches[1]
-} else {
-    Fail 'could not read version from pubspec.yaml'
 }
 
 $iscc = $null

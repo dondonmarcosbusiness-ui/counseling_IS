@@ -13,6 +13,10 @@ class DashboardStats {
     required this.todayAppointmentItems,
     required this.todaySessionItems,
     required this.upcomingAppointmentItems,
+    this.pendingSessions = 0,
+    this.pendingAppointmentItems = const [],
+    this.needsFollowUp = 0,
+    this.followUpItems = const [],
   });
 
   final int activeClients;
@@ -24,6 +28,16 @@ class DashboardStats {
   final List<Appointment> todayAppointmentItems;
   final List<DashboardSessionItem> todaySessionItems;
   final List<Appointment> upcomingAppointmentItems;
+
+  /// Scheduled sessions whose time has already passed without being marked
+  /// completed, missed or cancelled.
+  final int pendingSessions;
+  final List<Appointment> pendingAppointmentItems;
+
+  /// Students whose latest session recommended a follow-up that is due (or
+  /// overdue) and who have no appointment scheduled yet.
+  final int needsFollowUp;
+  final List<DashboardFollowUpItem> followUpItems;
 
   bool get isEmpty =>
       activeClients == 0 &&
@@ -105,7 +119,52 @@ class StatsRepository {
       'ORDER BY s.session_date ASC, s.id ASC',
       [dateToDb(localDayStart), dateToDb(localDayEnd)],
     );
+    final pendingCount = await _count(
+      'SELECT COUNT(*) AS c FROM appointments '
+      "WHERE starts_at < ? AND status = 'scheduled'",
+      [nowIso],
+    );
+    final pendingRows = await _db.rawQuery(
+      'SELECT a.*, c.full_name AS client_name '
+      'FROM appointments a '
+      'JOIN clients c ON c.id = a.client_id '
+      "WHERE a.starts_at < ? AND a.status = 'scheduled' "
+      'ORDER BY a.starts_at DESC LIMIT 5',
+      [nowIso],
+    );
+
+    // A follow-up is due when the student's most recent session recommends a
+    // next date that is today, overdue or within the coming week, and no
+    // appointment has been scheduled for that student yet.
+    final followUpCutoff = dateToDb(localDayStart.add(const Duration(days: 7)));
+    final followUpRows = await _db.rawQuery(
+      'SELECT s.client_id AS client_id, s.next_recommended_date AS due_date, '
+      'c.full_name AS client_name '
+      'FROM counseling_sessions s '
+      'JOIN clients c ON c.id = s.client_id '
+      'WHERE s.next_recommended_date IS NOT NULL '
+      'AND s.next_recommended_date <= ? '
+      "AND c.status = 'active' "
+      'AND s.id = ('
+      'SELECT s2.id FROM counseling_sessions s2 '
+      'WHERE s2.client_id = s.client_id '
+      'ORDER BY s2.session_date DESC, s2.id DESC LIMIT 1) '
+      'AND NOT EXISTS ('
+      'SELECT 1 FROM appointments a '
+      "WHERE a.client_id = s.client_id AND a.status = 'scheduled' "
+      'AND a.starts_at >= ?) '
+      'ORDER BY s.next_recommended_date ASC',
+      [followUpCutoff, dayStartIso],
+    );
+
     return DashboardStats(
+      pendingSessions: pendingCount,
+      pendingAppointmentItems: pendingRows.map(Appointment.fromMap).toList(),
+      needsFollowUp: followUpRows.length,
+      followUpItems: followUpRows
+          .take(5)
+          .map(DashboardFollowUpItem.fromMap)
+          .toList(),
       activeClients: activeClients,
       todaysAppointments: todaysAppointments,
       upcomingAppointments: upcomingAppointments,
@@ -128,6 +187,22 @@ class StatsRepository {
     final rows = await _db.rawQuery(sql, args);
     return (rows.first['c'] as int?) ?? 0;
   }
+}
+
+class DashboardFollowUpItem {
+  const DashboardFollowUpItem({
+    required this.clientName,
+    required this.dueDate,
+  });
+
+  final String clientName;
+  final DateTime dueDate;
+
+  static DashboardFollowUpItem fromMap(Map<String, Object?> map) =>
+      DashboardFollowUpItem(
+        clientName: map['client_name'] as String,
+        dueDate: parseDbDate(map['due_date'] as String)!,
+      );
 }
 
 class DashboardSessionItem {

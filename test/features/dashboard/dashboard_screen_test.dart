@@ -183,7 +183,9 @@ void main() {
     );
     expect(find.text('AWAITING COUNSELING'), findsOneWidget);
     expect(find.text('DUE FOLLOW-UPS'), findsNothing);
-    expect(find.text('Upcoming appointments'), findsOneWidget);
+    expect(find.textContaining('Upcoming sessions'), findsOneWidget);
+    expect(find.textContaining('Pending sessions'), findsOneWidget);
+    expect(find.textContaining('Needs follow-up'), findsOneWidget);
     expect(find.text('Jordan Rivera'), findsWidgets);
     expect(find.text('Today check-in'), findsWidgets);
     expect(find.text('Counseling session recorded'), findsOneWidget);

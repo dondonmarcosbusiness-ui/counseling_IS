@@ -1,6 +1,6 @@
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
-const int schemaVersion = 6;
+const int schemaVersion = 8;
 
 Future<void> applyAll(Database db) async {
   await applyV1(db);
@@ -9,6 +9,8 @@ Future<void> applyAll(Database db) async {
   await applyV4(db);
   await applyV5(db);
   await applyV6(db);
+  await applyV7(db);
+  await applyV8(db);
 }
 
 Future<void> applyV1(Database db) async {
@@ -239,6 +241,77 @@ Future<void> applyV6(Database db) async {
   ''');
 }
 
+/// Adds the Individual Student Information Sheet columns to `clients` so a
+/// newly registered student carries the same record as the paper form.
+Future<void> applyV7(Database db) async {
+  const addedColumns = <String, String>{
+    // I. Personal information
+    'grade_section': 'TEXT',
+    'learner_no': 'TEXT',
+    'sex': 'TEXT',
+    'religion': 'TEXT',
+    'address': 'TEXT',
+    'member_tags': 'TEXT',
+    'hobbies': 'TEXT',
+    // Person to notify in case of emergency
+    'emergency_name': 'TEXT',
+    'emergency_contact_no': 'TEXT',
+    'emergency_address': 'TEXT',
+    'emergency_job': 'TEXT',
+    'emergency_relationship': 'TEXT',
+    // II. Family
+    'father_name': 'TEXT',
+    'father_age': 'TEXT',
+    'father_job': 'TEXT',
+    'father_workplace': 'TEXT',
+    'father_education': 'TEXT',
+    'mother_name': 'TEXT',
+    'mother_age': 'TEXT',
+    'mother_job': 'TEXT',
+    'mother_workplace': 'TEXT',
+    'mother_education': 'TEXT',
+    'guardian_name': 'TEXT',
+    'guardian_age': 'TEXT',
+    'guardian_job': 'TEXT',
+    'guardian_workplace': 'TEXT',
+    'guardian_relationship': 'TEXT',
+    'living_with': 'TEXT',
+    'family_income': 'TEXT',
+    'parents_status': 'TEXT',
+    'parents_status_detail': 'TEXT',
+    // III. Important questions (confidential screening)
+    'screen_no_appetite': 'TEXT',
+    'screen_cries_often': 'TEXT',
+    'screen_abuse': 'TEXT',
+    'screen_self_blame': 'TEXT',
+    'screen_suicidal_thoughts': 'TEXT',
+  };
+
+  final columns = await db.rawQuery('PRAGMA table_info(clients)');
+  final existingColumns = columns.map((column) => column['name']).toSet();
+  for (final entry in addedColumns.entries) {
+    if (!existingColumns.contains(entry.key)) {
+      await db.execute(
+        'ALTER TABLE clients ADD COLUMN ${entry.key} ${entry.value}',
+      );
+    }
+  }
+}
+
+/// Groups individually saved form records into a batch fill so several
+/// forms filled for one student reopen together. Records keep their own
+/// rows; `batch_id` only links them.
+Future<void> applyV8(Database db) async {
+  final columns = await db.rawQuery('PRAGMA table_info(form_submissions)');
+  if (!columns.any((column) => column['name'] == 'batch_id')) {
+    await db.execute('ALTER TABLE form_submissions ADD COLUMN batch_id TEXT');
+  }
+  await db.execute(
+    'CREATE INDEX IF NOT EXISTS idx_form_submissions_batch '
+    'ON form_submissions(batch_id)',
+  );
+}
+
 Future<void> upgradeSchema(Database db, int oldVersion, int newVersion) async {
   var version = oldVersion;
   if (version < 1) {
@@ -263,5 +336,13 @@ Future<void> upgradeSchema(Database db, int oldVersion, int newVersion) async {
   }
   if (version < 6) {
     await applyV6(db);
+    version = 6;
+  }
+  if (version < 7) {
+    await applyV7(db);
+    version = 7;
+  }
+  if (version < 8) {
+    await applyV8(db);
   }
 }

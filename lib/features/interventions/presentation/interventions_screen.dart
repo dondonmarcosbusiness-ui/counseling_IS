@@ -24,6 +24,8 @@ class _InterventionsScreenState extends State<InterventionsScreen> {
   String _query = '';
   InterventionStatus? _status;
   late Future<List<Intervention>> _future;
+  int? _sortColumnIndex;
+  bool _sortAscending = true;
 
   @override
   void initState() {
@@ -44,6 +46,13 @@ class _InterventionsScreenState extends State<InterventionsScreen> {
   void _refresh() {
     setState(() {
       _future = _load();
+    });
+  }
+
+  void _onSort(int columnIndex, bool ascending) {
+    setState(() {
+      _sortColumnIndex = columnIndex;
+      _sortAscending = ascending;
     });
   }
 

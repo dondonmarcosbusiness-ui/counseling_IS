@@ -48,3 +48,41 @@ class FormSubmission {
     );
   }
 }
+
+/// A group of individually saved form records filled together for one
+/// student, listed on the Batch Fill screen.
+class FormBatchSummary {
+  const FormBatchSummary({
+    required this.batchId,
+    required this.clientId,
+    this.clientName,
+    required this.formCount,
+    required this.formIds,
+    required this.lastSavedAt,
+  });
+
+  final String batchId;
+  final int? clientId;
+  final String? clientName;
+  final int formCount;
+  final List<String> formIds;
+  final DateTime lastSavedAt;
+
+  static FormBatchSummary fromRow(Map<String, Object?> row) {
+    final formIds =
+        (row['form_ids'] as String?)
+            ?.split(',')
+            .where((formId) => formId.isNotEmpty)
+            .toList() ??
+        const <String>[];
+    return FormBatchSummary(
+      batchId: row['batch_id'] as String,
+      clientId: row['client_id'] as int?,
+      clientName: row['client_name'] as String?,
+      formCount: (row['form_count'] as num?)?.toInt() ?? formIds.length,
+      formIds: formIds,
+      lastSavedAt:
+          parseDbDateTime(row['last_saved_at'] as String?) ?? DateTime.now(),
+    );
+  }
+}

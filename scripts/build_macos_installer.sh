@@ -41,18 +41,23 @@ command -v hdiutil >/dev/null 2>&1 || die "hdiutil not found (required on macOS)
 [[ -z "${NOTARY_PROFILE:-}" || -n "${CODESIGN_IDENTITY:-}" ]] \
   || die "NOTARY_PROFILE requires CODESIGN_IDENTITY"
 
-VERSION="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | head -n1)"
-VERSION="${VERSION%%+*}"
-[[ -n "$VERSION" ]] || die "could not read version from pubspec.yaml"
+PUBSPEC_VERSION="$(sed -n 's/^version:[[:space:]]*//p' pubspec.yaml | head -n1)"
+[[ -n "$PUBSPEC_VERSION" ]] || die "could not read version from pubspec.yaml"
+VERSION="${PUBSPEC_VERSION%%+*}"
+if [[ "$PUBSPEC_VERSION" == *"+"* ]]; then
+  BUILD_NUMBER="${PUBSPEC_VERSION#*+}"
+else
+  BUILD_NUMBER="1"
+fi
 
 APP_DIR="build/macos/Build/Products/Release"
 APP="$APP_DIR/$APP_PRODUCT_NAME.app"
 DMG_DIR="${DMG_DIR:-build/dmg}"
 DMG="$DMG_DIR/$APP_DISPLAY_NAME-$VERSION.dmg"
 
-log "Building release app (version $VERSION)"
+log "Building release app (version $VERSION+$BUILD_NUMBER)"
 flutter pub get
-flutter build macos --release
+flutter build macos --release --build-name "$VERSION" --build-number "$BUILD_NUMBER"
 [[ -d "$APP" ]] || die "expected app not found at $APP"
 # Newer Flutter releases embed flutter_assets inside App.framework;
 # older layouts keep them under Contents/Resources.

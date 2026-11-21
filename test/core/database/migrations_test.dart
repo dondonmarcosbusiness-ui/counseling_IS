@@ -50,6 +50,57 @@ void main() {
       expect(clients.single['middle_name'], isNull);
       expect(clients.single['last_name'], isNull);
       expect(clients.single['suffix'], isNull);
+      expect(clients.single['grade_section'], isNull);
+      expect(clients.single['learner_no'], isNull);
+      expect(clients.single['sex'], isNull);
+      expect(clients.single['emergency_name'], isNull);
+      expect(clients.single['father_name'], isNull);
+      expect(clients.single['living_with'], isNull);
+      expect(clients.single['screen_suicidal_thoughts'], isNull);
+
+      final clientColumns = await db.rawQuery('PRAGMA table_info(clients)');
+      final columnNames = clientColumns.map((column) => column['name']).toSet();
+      expect(
+        columnNames,
+        containsAll([
+          'grade_section',
+          'learner_no',
+          'sex',
+          'religion',
+          'address',
+          'member_tags',
+          'hobbies',
+          'emergency_name',
+          'emergency_contact_no',
+          'emergency_address',
+          'emergency_job',
+          'emergency_relationship',
+          'father_name',
+          'father_age',
+          'father_job',
+          'father_workplace',
+          'father_education',
+          'mother_name',
+          'mother_age',
+          'mother_job',
+          'mother_workplace',
+          'mother_education',
+          'guardian_name',
+          'guardian_age',
+          'guardian_job',
+          'guardian_workplace',
+          'guardian_relationship',
+          'living_with',
+          'family_income',
+          'parents_status',
+          'parents_status_detail',
+          'screen_no_appetite',
+          'screen_cries_often',
+          'screen_abuse',
+          'screen_self_blame',
+          'screen_suicidal_thoughts',
+        ]),
+      );
 
       final settings = await db.rawQuery(
         "SELECT name FROM sqlite_master WHERE type = 'table' "
@@ -184,6 +235,154 @@ void main() {
       "AND name = 'idx_interventions_status'",
     );
     expect(index, hasLength(1));
+    await db.close();
+  });
+
+  test('v7 migration adds writable information sheet columns', () async {
+    final dir = Directory.systemTemp.createTempSync('migrate_v7_test');
+    final path = '${dir.path}/app.db';
+    addTearDown(() => dir.deleteSync(recursive: true));
+
+    var db = await databaseFactoryFfiNoIsolate.openDatabase(
+      path,
+      options: OpenDatabaseOptions(
+        version: 6,
+        onCreate: (db, version) async {
+          await applyV1(db);
+          await applyV2(db);
+          await applyV3(db);
+          await applyV4(db);
+          await applyV5(db);
+          await applyV6(db);
+        },
+        singleInstance: false,
+      ),
+    );
+    final clientId = await db.insert('clients', {
+      'reference_no': 'CLI-2026-0100',
+      'full_name': 'Legacy Student',
+      'registered_at': '2026-01-03T00:00:00.000Z',
+      'updated_at': '2026-01-03T00:00:00.000Z',
+    });
+    await db.close();
+
+    db = await databaseFactoryFfiNoIsolate.openDatabase(
+      path,
+      options: OpenDatabaseOptions(
+        version: schemaVersion,
+        onUpgrade: upgradeSchema,
+        singleInstance: false,
+      ),
+    );
+
+    await db.update(
+      'clients',
+      {
+        'grade_section': 'Grade 9 - Sampaguita',
+        'learner_no': '123456789012',
+        'sex': 'Female',
+        'address': 'Purok 3, Carranglan',
+        'member_tags': '4Ps, IP',
+        'screen_suicidal_thoughts': 'No',
+      },
+      where: 'id = ?',
+      whereArgs: [clientId],
+    );
+    final row = await db.query(
+      'clients',
+      where: 'id = ?',
+      whereArgs: [clientId],
+    );
+    expect(row.single['grade_section'], 'Grade 9 - Sampaguita');
+    expect(row.single['learner_no'], '123456789012');
+    expect(row.single['screen_suicidal_thoughts'], 'No');
+    expect(row.single['father_name'], isNull);
+
+    final version = await db.rawQuery('PRAGMA user_version');
+    expect(version.single.values.single, schemaVersion);
+    await db.close();
+  });
+
+  test('v8 migration adds the batch_id grouping column', () async {
+    final dir = Directory.systemTemp.createTempSync('migrate_v8_test');
+    final path = '${dir.path}/app.db';
+    addTearDown(() => dir.deleteSync(recursive: true));
+
+    // A v7 database with one saved form record.
+    var db = await databaseFactoryFfiNoIsolate.openDatabase(
+      path,
+      options: OpenDatabaseOptions(
+        version: 7,
+        onCreate: (db, version) async {
+          await applyV1(db);
+          await applyV2(db);
+          await applyV3(db);
+          await applyV4(db);
+          await applyV5(db);
+          await applyV6(db);
+          await applyV7(db);
+        },
+        singleInstance: false,
+      ),
+    );
+    final clientId = await db.insert('clients', {
+      'reference_no': 'CLI-2026-0200',
+      'full_name': 'Batch Student',
+      'registered_at': '2026-02-01T00:00:00.000Z',
+      'updated_at': '2026-02-01T00:00:00.000Z',
+    });
+    final submissionId = await db.insert('form_submissions', {
+      'form_id': 'referral',
+      'client_id': clientId,
+      'form_data': '{"other_reason":"Before upgrade"}',
+      'created_at': '2026-02-01T00:00:00.000Z',
+      'updated_at': '2026-02-01T00:00:00.000Z',
+    });
+    await db.close();
+
+    // Reopen at the current version: v8 must add batch_id.
+    db = await databaseFactoryFfiNoIsolate.openDatabase(
+      path,
+      options: OpenDatabaseOptions(
+        version: schemaVersion,
+        onUpgrade: upgradeSchema,
+        singleInstance: false,
+      ),
+    );
+
+    final columns = await db.rawQuery('PRAGMA table_info(form_submissions)');
+    expect(columns.map((column) => column['name']), contains('batch_id'));
+
+    final index = await db.rawQuery(
+      "SELECT name FROM sqlite_master WHERE type = 'index' "
+      "AND name = 'idx_form_submissions_batch'",
+    );
+    expect(index, hasLength(1));
+
+    // Existing rows survive with a null batch; new rows accept the column.
+    final row = await db.query(
+      'form_submissions',
+      where: 'id = ?',
+      whereArgs: [submissionId],
+    );
+    expect(row.single['form_data'], '{"other_reason":"Before upgrade"}');
+    expect(row.single['batch_id'], isNull);
+
+    await db.update(
+      'form_submissions',
+      {'batch_id': 'batch-20260201'},
+      where: 'id = ?',
+      whereArgs: [submissionId],
+    );
+    final updated = await db.query(
+      'form_submissions',
+      where: 'id = ?',
+      whereArgs: [submissionId],
+    );
+    expect(updated.single['batch_id'], 'batch-20260201');
+
+    final version = await db.rawQuery('PRAGMA user_version');
+    expect(version.single.values.single, schemaVersion);
     await db.close();
   });
 

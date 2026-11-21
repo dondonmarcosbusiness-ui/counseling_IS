@@ -2,9 +2,9 @@ import 'package:counseling_is/features/forms/domain/counseling_form.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
-  test('catalog includes eleven templates and a distinct intake workflow', () {
-    expect(counselingFormCatalog, hasLength(12));
-    expect(counselingFormCatalog.map((form) => form.id).toSet(), hasLength(12));
+  test('catalog offers the active templates only', () {
+    expect(counselingFormCatalog, hasLength(11));
+    expect(counselingFormCatalog.map((form) => form.id).toSet(), hasLength(11));
     expect(
       counselingFormCatalog.every((form) => form.questionCount > 0),
       isTrue,
@@ -13,6 +13,25 @@ void main() {
       counselingFormCatalog.where((form) => form.documentNo == 'CC Form 9'),
       hasLength(2),
     );
+  });
+
+  test('student information sheet is retired but still resolvable', () {
+    // Removed from the Student Forms tabs: students are registered through
+    // the New student dialog, which mirrors this sheet.
+    expect(
+      counselingFormCatalog.map((form) => form.id),
+      isNot(contains('student_information')),
+    );
+    expect(
+      retiredCounselingForms.map((form) => form.id),
+      contains('student_information'),
+    );
+
+    final form = counselingFormById('student_information');
+    expect(form, isNotNull);
+    expect(form!.title, 'Student Information Sheet');
+    expect(form.documentNo, 'CC Form 1');
+    expect(form.questionCount, greaterThan(0));
   });
 
   test('child-protection intake is labeled as an internal workflow', () {
@@ -64,7 +83,7 @@ void main() {
             if (question.id == 'sex') question,
     ];
 
-    expect(genderQuestions, hasLength(4));
+    expect(genderQuestions, hasLength(3));
     for (final question in genderQuestions) {
       expect(question.label, 'Gender');
       expect(question.options, contains('Prefer not to say'));

@@ -19,6 +19,7 @@ import 'package:counseling_is/features/dashboard/presentation/dashboard_screen.d
 import 'package:counseling_is/features/forms/data/form_submission_repository.dart';
 import 'package:counseling_is/features/forms/domain/counseling_form.dart';
 import 'package:counseling_is/features/forms/domain/form_submission.dart';
+import 'package:counseling_is/features/forms/presentation/batch_fill_screen.dart';
 import 'package:counseling_is/features/forms/presentation/forms_screen.dart';
 import 'package:counseling_is/features/interventions/data/intervention_repository.dart';
 import 'package:counseling_is/features/interventions/presentation/interventions_screen.dart';
@@ -151,6 +152,11 @@ class _CounselingAppState extends State<CounselingApp> {
               path: '/forms',
               builder: (_, _) => const Scaffold(body: FormsScreen()),
               routes: [
+                // Static segment first so it is never captured by :formId.
+                GoRoute(
+                  path: 'batch',
+                  builder: (_, _) => const Scaffold(body: BatchFillScreen()),
+                ),
                 GoRoute(
                   path: ':formId',
                   builder: (context, state) {

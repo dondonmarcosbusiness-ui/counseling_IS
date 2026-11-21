@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:counseling_is/core/errors/app_exception.dart';
@@ -10,12 +11,18 @@ import 'package:counseling_is/core/widgets/confirm_dialog.dart';
 import 'package:counseling_is/core/widgets/error_banner.dart';
 import 'package:counseling_is/core/widgets/list_states.dart';
 import 'package:counseling_is/core/widgets/picker_field.dart';
+import 'package:counseling_is/core/widgets/success_banner.dart';
 import 'package:counseling_is/features/clients/data/client_repository.dart';
 import 'package:counseling_is/features/clients/domain/client.dart';
+import 'package:counseling_is/features/forms/data/form_docx_exporter.dart';
 import 'package:counseling_is/features/forms/data/form_pdf_exporter.dart';
 import 'package:counseling_is/features/forms/data/form_submission_repository.dart';
+import 'package:counseling_is/features/forms/data/word_print_preview.dart';
+import 'package:counseling_is/features/forms/domain/composite_form.dart';
 import 'package:counseling_is/features/forms/domain/counseling_form.dart';
 import 'package:counseling_is/features/forms/domain/form_submission.dart';
+import 'package:counseling_is/features/forms/presentation/referral_email_dialog.dart';
+import 'package:counseling_is/features/forms/presentation/student_forms_preview_dialog.dart';
 import 'package:file_selector/file_selector.dart';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
@@ -46,6 +53,38 @@ class _FormsScreenState extends State<FormsScreen>
   late Future<List<FormSubmission>> _future;
   late Future<List<Client>> _clientsFuture;
   _FormsView _view = _FormsView.saved;
+  int? _sortColumnIndex;
+  bool _sortAscending = true;
+
+  /// Groups the loaded records into rows of the saved-forms table: one row
+  /// per student so a name is never repeated, and one row for each record
+  /// that was saved without a student so it stays reachable.
+  List<_SavedFormRow> _groupSavedForms(List<FormSubmission> submissions) {
+    final rows = <_SavedFormRow>[];
+    final rowIndexByClient = <int, int>{};
+    for (final submission in submissions) {
+      final clientId = submission.clientId;
+      if (clientId == null) {
+        rows.add(_SavedFormRow(studentName: null, submissions: [submission]));
+        continue;
+      }
+      final index = rowIndexByClient[clientId];
+      if (index == null) {
+        // The list is newest first, so the first record of a student is the
+        // row's "last saved" value and sets the row's position.
+        rowIndexByClient[clientId] = rows.length;
+        rows.add(
+          _SavedFormRow(
+            studentName: submission.clientName,
+            submissions: [submission],
+          ),
+        );
+      } else {
+        rows[index].submissions.add(submission);
+      }
+    }
+    return rows;
+  }
 
   @override
   void initState() {
@@ -77,17 +116,32 @@ class _FormsScreenState extends State<FormsScreen>
     });
   }
 
-  void _toggleSubmissionSelection(int? submissionId, bool? selected) {
-    if (submissionId == null) return;
+  void _onSort(int columnIndex, bool ascending) {
     setState(() {
-      if (selected == true) {
-        _selectedSubmissionIds.add(submissionId);
-      } else {
-        _selectedSubmissionIds.remove(submissionId);
+      _sortColumnIndex = columnIndex;
+      _sortAscending = ascending;
+    });
+  }
+
+  /// Selects or clears every record behind one table row, so a whole
+  /// student's forms are chosen with a single checkbox.
+  void _toggleRowSelection(List<FormSubmission> records, bool? selected) {
+    setState(() {
+      for (final record in records) {
+        if (record.id == null) continue;
+        if (selected == true) {
+          _selectedSubmissionIds.add(record.id!);
+        } else {
+          _selectedSubmissionIds.remove(record.id!);
+        }
       }
       _batchError = null;
     });
   }
+
+  bool _isRowSelected(List<FormSubmission> records) => records.any(
+    (record) => record.id != null && _selectedSubmissionIds.contains(record.id),
+  );
 
   Future<void> _deleteSelectedSubmissions(
     List<FormSubmission> visibleSubmissions,
@@ -101,37 +155,52 @@ class _FormsScreenState extends State<FormsScreen>
         .toList();
     if (selected.isEmpty) return;
 
+    await _deleteSubmissions(selected);
+  }
+
+  /// Deletes [records] after confirmation. Returns whether the records were
+  /// actually removed, so callers such as the student preview window can
+  /// drop them from their own list.
+  Future<bool> _deleteSubmissions(List<FormSubmission> records) async {
+    if (records.isEmpty) return false;
+    final count = records.length;
     final confirmed = await showConfirmDialog(
       context,
-      title: 'Delete selected forms?',
-      message:
-          'This will permanently delete ${selected.length} selected '
-          'form${selected.length == 1 ? '' : 's'}.',
+      title: count == 1 ? 'Delete saved form?' : 'Delete saved forms?',
+      message: count == 1
+          ? 'This form record will be permanently deleted.'
+          : 'These $count form records will be permanently deleted.',
       confirmLabel: 'Delete',
       destructive: true,
     );
-    if (!confirmed || !mounted) return;
+    if (!confirmed || !mounted) return false;
 
     try {
-      await context.read<FormSubmissionRepository>().deleteMany(
-        selected.map((submission) => submission.id!),
-      );
-      if (!mounted) return;
+      final repository = context.read<FormSubmissionRepository>();
+      if (count == 1) {
+        await repository.delete(records.single.id!);
+      } else {
+        await repository.deleteMany(records.map((record) => record.id!));
+      }
+      if (!mounted) return false;
       setState(() {
-        _selectedSubmissionIds.clear();
+        for (final record in records) {
+          if (record.id != null) _selectedSubmissionIds.remove(record.id);
+        }
         _batchError = null;
-        _future = _load();
       });
+      _refresh();
+      return true;
     } on AppException catch (error) {
-      if (!mounted) return;
-      setState(() => _batchError = error.message);
-      _refresh();
+      if (mounted) _showMessage(error.message);
+      return false;
     } catch (_) {
-      if (!mounted) return;
-      setState(
-        () => _batchError = 'The selected form records could not be deleted.',
-      );
-      _refresh();
+      if (mounted) {
+        _showMessage(
+          'The form record${count == 1 ? '' : 's'} could not be deleted.',
+        );
+      }
+      return false;
     }
   }
 
@@ -178,6 +247,15 @@ class _FormsScreenState extends State<FormsScreen>
   void _editSubmission(FormSubmission submission) {
     final form = counselingFormById(submission.formId);
     if (form == null) return;
+    if (!counselingFormCatalog.contains(form)) {
+      // Retired form (CC Form 1): the sheet is now part of the New student
+      // dialog, so it no longer opens on this screen.
+      _showMessage(
+        'The Student Information Sheet is no longer filled here. '
+        'New students are registered through the New student form.',
+      );
+      return;
+    }
     if (_tabPinned && form.id != _selectedForm.id) {
       setState(
         () => _tabNotice =
@@ -206,34 +284,42 @@ class _FormsScreenState extends State<FormsScreen>
         .showSnackBar(const SnackBar(content: Text('Form saved.')));
   }
 
-  Future<void> _deleteSubmission(FormSubmission submission) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete saved form?'),
-        content: const Text('This form record will be permanently deleted.'),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(dialogContext).pop(false),
-            child: const Text('Cancel'),
+  /// One form's entry in the "Forms" cell: the tappable title over its
+  /// document number.
+  Widget _formCellEntry(FormSubmission submission) {
+    final theme = Theme.of(context);
+    final form = counselingFormById(submission.formId);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        InkWell(
+          onTap: form == null ? null : () => _editSubmission(submission),
+          child: Text(form?.title ?? submission.formId),
+        ),
+        Text(
+          form?.documentNo ?? 'Form',
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
           ),
-          FilledButton(
-            onPressed: () => Navigator.of(dialogContext).pop(true),
-            child: const Text('Delete'),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
-    if (confirmed != true || !mounted) return;
+  }
 
-    try {
-      await context.read<FormSubmissionRepository>().delete(submission.id!);
-      _refresh();
-    } on AppException catch (error) {
-      if (mounted) _showMessage(error.message);
-    } catch (_) {
-      if (mounted) _showMessage('The form record could not be deleted.');
-    }
+  /// Opens the preview window holding every form saved for one table row,
+  /// laid out as one print-ready document.
+  void _openStudentPreview(_SavedFormRow row) {
+    StudentFormsPreviewDialog.show(
+      context,
+      studentName:
+          row.studentName ??
+          counselingFormById(row.newest.formId)?.title ??
+          'Saved form',
+      submissions: row.submissions,
+      onOpenForm: _editSubmission,
+      onDeleteForm: (submission) => _deleteSubmissions([submission]),
+    );
   }
 
   void _showMessage(String message) {
@@ -681,62 +767,144 @@ class _FormsScreenState extends State<FormsScreen>
                     clipBehavior: Clip.antiAlias,
                     child: AppDataTable(
                       showCheckboxColumn: true,
+                      // Cells stack a form title over its number, so rows
+                      // must be allowed to grow past the control height.
+                      dataRowMaxHeight: double.infinity,
                       columns: const [
-                        DataColumn(label: Text('Form')),
-                        DataColumn(label: Text('Form number')),
-                        DataColumn(label: Text('Linked student')),
+                        DataColumn(label: Text('Student')),
+                        DataColumn(label: Text('Forms')),
                         DataColumn(label: Text('Last saved')),
                         DataColumn(label: Text('Actions')),
                       ],
                       rows: [
-                        for (final submission in submissions)
+                        for (final row in _groupSavedForms(submissions))
                           DataRow(
-                            key: ValueKey(submission.id),
-                            selected: _selectedSubmissionIds.contains(
-                              submission.id,
-                            ),
+                            key: ValueKey(row.newest.id),
+                            selected: _isRowSelected(row.submissions),
                             onSelectChanged: (selected) =>
-                                _toggleSubmissionSelection(
-                                  submission.id,
-                                  selected,
-                                ),
+                                _toggleRowSelection(row.submissions, selected),
                             cells: [
                               DataCell(
-                                Text(
-                                  counselingFormById(submission.formId)
-                                          ?.title ??
-                                      submission.formId,
+                                row.studentName == null
+                                    ? const Text('No linked student')
+                                    : InkWell(
+                                        borderRadius: BorderRadius.circular(6),
+                                        onTap: () => _openStudentPreview(row),
+                                        child: Padding(
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 4,
+                                            horizontal: 6,
+                                          ),
+                                          child: Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            mainAxisSize: MainAxisSize.min,
+                                            children: [
+                                              Text(
+                                                row.studentName!,
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w600,
+                                                  color: colors.primary,
+                                                ),
+                                              ),
+                                              Text(
+                                                row.submissions.length == 1
+                                                    ? '1 saved form'
+                                                    : '${row.submissions.length} saved forms',
+                                                style: theme.textTheme.bodySmall
+                                                    ?.copyWith(
+                                                      color: colors
+                                                          .onSurfaceVariant,
+                                                    ),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                              ),
+                              DataCell(
+                                Builder(
+                                  builder: (context) {
+                                    // Only the newest form is listed so the
+                                    // row stays one line tall; the rest are
+                                    // reachable from the preview window.
+                                    final visible = row.submissions
+                                        .take(1)
+                                        .toList(growable: false);
+                                    final extra =
+                                        row.submissions.length - visible.length;
+                                    return Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        for (final (index, submission)
+                                            in visible.indexed)
+                                          Padding(
+                                            padding: EdgeInsets.only(
+                                              bottom:
+                                                  index == visible.length - 1 &&
+                                                      extra == 0
+                                                  ? 0
+                                                  : AppSpacing.sm,
+                                            ),
+                                            child: _formCellEntry(submission),
+                                          ),
+                                        if (extra > 0)
+                                          InkWell(
+                                            borderRadius: BorderRadius.circular(
+                                              6,
+                                            ),
+                                            onTap: () =>
+                                                _openStudentPreview(row),
+                                            child: Padding(
+                                              padding:
+                                                  const EdgeInsets.symmetric(
+                                                    vertical: 2,
+                                                    horizontal: 4,
+                                                  ),
+                                              child: Text(
+                                                '+$extra more',
+                                                style: theme.textTheme.bodySmall
+                                                    ?.copyWith(
+                                                      color: colors.primary,
+                                                      fontWeight:
+                                                          FontWeight.w600,
+                                                    ),
+                                              ),
+                                            ),
+                                          ),
+                                      ],
+                                    );
+                                  },
                                 ),
-                                onTap:
-                                    counselingFormById(submission.formId) ==
-                                        null
-                                    ? null
-                                    : () => _editSubmission(submission),
                               ),
                               DataCell(
-                                Text(
-                                  counselingFormById(submission.formId)
-                                          ?.documentNo ??
-                                      'Form',
-                                ),
+                                Text(formatDateTime(row.newest.updatedAt)),
                               ),
                               DataCell(
-                                Text(
-                                  submission.clientName ?? 'No linked student',
-                                ),
-                              ),
-                              DataCell(
-                                Text(formatDateTime(submission.updatedAt)),
-                              ),
-                              DataCell(
-                                IconButton(
-                                  tooltip: 'Delete form',
-                                  icon: const Icon(Icons.delete_outline),
-                                  style: IconButton.styleFrom(
-                                    foregroundColor: colors.error,
-                                  ),
-                                  onPressed: () =>
-                                      _deleteSubmission(submission),
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      tooltip: 'Preview and print forms',
+                                      icon: const Icon(
+                                        Icons.picture_as_pdf_outlined,
+                                      ),
+                                      onPressed: () => _openStudentPreview(row),
+                                    ),
+                                    IconButton(
+                                      tooltip: row.submissions.length == 1
+                                          ? 'Delete form'
+                                          : 'Delete forms',
+                                      icon: const Icon(Icons.delete_outline),
+                                      style: IconButton.styleFrom(
+                                        foregroundColor: colors.error,
+                                      ),
+                                      onPressed: () =>
+                                          _deleteSubmissions(row.submissions),
+                                    ),
+                                  ],
                                 ),
                               ),
                             ],
@@ -754,6 +922,68 @@ class _FormsScreenState extends State<FormsScreen>
   }
 }
 
+/// One row of the saved-forms table: either every record saved for a single
+/// student, or one record that was saved without a student.
+class _SavedFormRow {
+  _SavedFormRow({
+    required this.studentName,
+    required List<FormSubmission> submissions,
+  }) : submissions = [...submissions];
+
+  /// Null for records that were saved without a linked student.
+  final String? studentName;
+
+  /// The student's records, newest first.
+  final List<FormSubmission> submissions;
+
+  /// The record that sets the row's "last saved" value and position.
+  FormSubmission get newest => submissions.first;
+
+  bool get isLinked => studentName != null;
+}
+
+/// Everything the merged page needs to fill several forms for one student
+/// in a single pass: the composite rendering, the student to save against,
+/// and the latest saved record per form so existing records are updated
+/// instead of duplicated.
+class BatchFormSpec {
+  const BatchFormSpec({
+    required this.composite,
+    required this.clientId,
+    this.batchId,
+    this.existingByForm = const {},
+  });
+
+  /// The chosen forms merged into one page.
+  final CompositeForm composite;
+
+  /// Student the whole batch is saved against.
+  final int? clientId;
+
+  /// Set when reopening a batch that was saved before.
+  final String? batchId;
+
+  /// Latest saved record per form ID, refreshed after every save.
+  final Map<String, FormSubmission> existingByForm;
+}
+
+/// A value read back from a saved source record before the merged page
+/// initialises its fields — [group] and [part] are the record's own name
+/// fields, which may differ from the composite's canonical ones.
+class _BatchSourceValue {
+  const _BatchSourceValue({
+    required this.value,
+    required this.data,
+    required this.group,
+    required this.part,
+  });
+
+  final Object? value;
+  final Map<String, Object?> data;
+  final String? group;
+  final FormNamePart? part;
+}
+
 class CounselingFormPage extends StatefulWidget {
   const CounselingFormPage({
     super.key,
@@ -762,6 +992,7 @@ class CounselingFormPage extends StatefulWidget {
     this.clientsFuture,
     this.embedded = false,
     this.onSaved,
+    this.batch,
   });
 
   final CounselingForm form;
@@ -769,6 +1000,10 @@ class CounselingFormPage extends StatefulWidget {
   final Future<List<Client>>? clientsFuture;
   final bool embedded;
   final VoidCallback? onSaved;
+
+  /// Non-null when this page renders a batch: [form] is then the composite
+  /// of every chosen form.
+  final BatchFormSpec? batch;
 
   @override
   State<CounselingFormPage> createState() => _CounselingFormPageState();
@@ -778,6 +1013,7 @@ class _CounselingFormPageState extends State<CounselingFormPage> {
   static const _fieldLabelHeight = 40.0;
 
   final _pdfExporter = FormPdfExporter();
+  final _docxExporter = FormDocxExporter();
   final _textControllers = <String, TextEditingController>{};
   final _dates = <String, DateTime?>{};
   final _choices = <String, String?>{};
@@ -787,14 +1023,30 @@ class _CounselingFormPageState extends State<CounselingFormPage> {
   final _checks = <String, bool>{};
   final _autoFilledTextValues = <String, String>{};
   final _autoFilledDates = <String, DateTime>{};
+  final _autoFilledChoices = <String, String>{};
+  Map<String, Object?> _profile = const {};
   List<Client> _clients = [];
   int? _clientId;
+  final _existingByForm = <String, FormSubmission>{};
+  String? _batchId;
   bool _clientsLoading = true;
   bool _saving = false;
   bool _exporting = false;
   String? _error;
 
+  /// Inline confirmation of the last successful save, shown at the top of
+  /// the form until it is dismissed or a new save starts.
+  String? _notice;
+
   bool get _isEdit => widget.submission != null;
+
+  bool get _isBatch => widget.batch != null;
+
+  String get _batchSaveLabel => _isBatch
+      ? 'Save all'
+      : _isEdit
+      ? 'Save changes'
+      : 'Save form';
 
   bool get _hasAnyAnswer =>
       _clientId != null ||
@@ -852,43 +1104,96 @@ class _CounselingFormPageState extends State<CounselingFormPage> {
   void initState() {
     super.initState();
     final submission = widget.submission;
-    _clientId = submission?.clientId;
-    for (final section in widget.form.sections) {
-      for (final question in section.questions) {
-        var value = submission?.data[question.id];
-        final nameGroup = question.nameGroup;
-        if (value == null &&
-            nameGroup != null &&
-            submission?.data[nameGroup] is String) {
-          value = _legacyNameParts(
-            submission!.data[nameGroup] as String,
-          )[question.namePart]!;
-        }
-        switch (question.type) {
-          case FormInputType.text:
-          case FormInputType.multiline:
-            _textControllers[question.id] = TextEditingController(
-              text: value as String? ?? '',
+    _clientId = submission?.clientId ?? widget.batch?.clientId;
+    _batchId = widget.batch?.batchId;
+    _existingByForm.addAll(widget.batch?.existingByForm ?? const {});
+
+    // Batch mode: read each source record back under the composite IDs the
+    // merged page renders, so reopening a batch restores every form.
+    final batchValues = <String, _BatchSourceValue>{};
+    final composite = widget.batch?.composite;
+    if (composite != null) {
+      for (final source in composite.sourceForms) {
+        final record = _existingByForm[source.id];
+        if (record == null) continue;
+        for (final section in source.sections) {
+          for (final question in section.questions) {
+            final compositeId = composite.compositeIdFor(
+              source.id,
+              question.id,
             );
-          case FormInputType.date:
-            _dates[question.id] = DateTime.tryParse(value as String? ?? '');
-          case FormInputType.choice:
-            _choices[question.id] = value as String?;
-          case FormInputType.choices:
-            _multipleChoices[question.id] = value is List
-                ? value.whereType<String>().toSet()
-                : <String>{};
-          case FormInputType.checkbox:
-            _checks[question.id] = value == true;
-          case FormInputType.repeatable:
-            _repeatableEntries[question.id] = _initialRepeatableEntries(
-              question,
-              value,
-            );
+            final value = record.data[question.id];
+            final current = batchValues[compositeId];
+            if (current == null || (current.value == null && value != null)) {
+              batchValues[compositeId] = _BatchSourceValue(
+                value: value,
+                data: record.data,
+                group: question.nameGroup,
+                part: question.namePart,
+              );
+            }
+          }
         }
       }
     }
+
+    for (final section in widget.form.sections) {
+      for (final question in section.questions) {
+        final sourceValue = batchValues[question.id];
+        _initializeQuestion(
+          question,
+          composite == null
+              ? submission?.data[question.id]
+              : sourceValue?.value,
+          legacyData: composite == null ? submission?.data : sourceValue?.data,
+          legacyGroup: composite == null
+              ? question.nameGroup
+              : sourceValue?.group,
+          legacyPart: composite == null ? question.namePart : sourceValue?.part,
+        );
+      }
+    }
     _loadClients();
+  }
+
+  /// Seeds one field from a saved answer, falling back to the legacy
+  /// full-name string older records stored under the name group.
+  void _initializeQuestion(
+    FormQuestion question,
+    Object? value, {
+    Map<String, Object?>? legacyData,
+    String? legacyGroup,
+    FormNamePart? legacyPart,
+  }) {
+    if (value == null &&
+        legacyData != null &&
+        legacyGroup != null &&
+        legacyPart != null &&
+        legacyData[legacyGroup] is String) {
+      value = _legacyNameParts(legacyData[legacyGroup] as String)[legacyPart]!;
+    }
+    switch (question.type) {
+      case FormInputType.text:
+      case FormInputType.multiline:
+        _textControllers[question.id] = TextEditingController(
+          text: value as String? ?? '',
+        );
+      case FormInputType.date:
+        _dates[question.id] = DateTime.tryParse(value as String? ?? '');
+      case FormInputType.choice:
+        _choices[question.id] = value as String?;
+      case FormInputType.choices:
+        _multipleChoices[question.id] = value is List
+            ? value.whereType<String>().toSet()
+            : <String>{};
+      case FormInputType.checkbox:
+        _checks[question.id] = value == true;
+      case FormInputType.repeatable:
+        _repeatableEntries[question.id] = _initialRepeatableEntries(
+          question,
+          value,
+        );
+    }
   }
 
   List<Map<String, TextEditingController>> _initialRepeatableEntries(
@@ -979,6 +1284,7 @@ class _CounselingFormPageState extends State<CounselingFormPage> {
           _clients = clients;
           _clientsLoading = false;
         });
+        unawaited(_loadProfile(_clientId));
       }
     } catch (_) {
       if (mounted) {
@@ -996,10 +1302,121 @@ class _CounselingFormPageState extends State<CounselingFormPage> {
       _clientId = clientId;
       if (client != null) _applyClientToStudentFields(client);
     });
+    unawaited(_loadProfile(clientId));
+  }
+
+  /// Loads the personal information the counselor already recorded in the
+  /// student's Student Information Sheet so it never has to be typed again.
+  Future<void> _loadProfile(int? clientId) async {
+    if (clientId == null || widget.form.id == 'student_information') {
+      return;
+    }
+    try {
+      final repository = context.read<FormSubmissionRepository>();
+      final data = await repository.latestDataForClient(
+        clientId,
+        'student_information',
+      );
+      if (!mounted || _clientId != clientId || data == null) return;
+      setState(() {
+        _profile = data;
+        _applyProfileToFields();
+      });
+    } catch (_) {
+      // Auto-fill is a convenience; the form stays fully editable without it.
+    }
+  }
+
+  String _profileText(String key) => (_profile[key] as String?)?.trim() ?? '';
+
+  String _profileName(String group, String part) =>
+      _profileText('${group}_$part');
+
+  void _applyProfileToFields() {
+    if (_profile.isEmpty) return;
+    // Prefer the guardian, then the mother, then the father.
+    String? parentGroup;
+    String parentContact = '';
+    for (final (group, contactKey) in const [
+      ('guardian_name', 'guardian_contact_address'),
+      ('mother_name', 'mother_contact'),
+      ('father_name', 'father_contact'),
+    ]) {
+      if (_profileName(group, 'first').isNotEmpty ||
+          _profileName(group, 'last').isNotEmpty) {
+        parentGroup = group;
+        parentContact = _profileText(contactKey);
+        break;
+      }
+    }
+    const partKeys = {
+      FormNamePart.first: 'first',
+      FormNamePart.middle: 'middle',
+      FormNamePart.last: 'last',
+      FormNamePart.suffix: 'suffix',
+    };
+    final birthDate = DateTime.tryParse(_profileText('date_of_birth'));
+
+    for (final section in widget.form.sections) {
+      for (final question in section.questions) {
+        final controller = _textControllers[question.id];
+        if (controller != null) {
+          String? value;
+          if (question.nameGroup == 'parent_guardian' &&
+              parentGroup != null &&
+              question.namePart != null) {
+            value = _profileName(parentGroup, partKeys[question.namePart]!);
+          } else if (question.id == 'grade_section') {
+            value = _profileText('grade_section');
+          } else if (question.id == 'home_address' ||
+              question.id == 'address_visited') {
+            value = _profileText('home_address');
+          } else if (question.id == 'religion') {
+            value = _profileText('religion');
+          } else if (question.id == 'guardian_contact') {
+            value = parentContact;
+          } else if (question.id == 'contact_number' &&
+              (widget.form.id == 'counseling_intake' || _isBatch)) {
+            value = parentContact;
+          } else if (question.id == 'age' &&
+              controller.text.trim().isEmpty &&
+              birthDate != null) {
+            value = _clientAge(birthDate).toString();
+          }
+          if (value != null && value.isNotEmpty) {
+            _applyAutoFilledText(question.id, controller, value);
+          }
+        }
+
+        if (question.type == FormInputType.date &&
+            question.id == 'date_of_birth' &&
+            _dates[question.id] == null &&
+            birthDate != null) {
+          _dates[question.id] = birthDate;
+          _autoFilledDates[question.id] = birthDate;
+        }
+
+        if (question.type == FormInputType.choice && question.id == 'sex') {
+          final value = _profileText('sex');
+          final current = _choices[question.id];
+          if (value.isNotEmpty &&
+              question.options.contains(value) &&
+              (current == null || current == _autoFilledChoices[question.id])) {
+            _choices[question.id] = value;
+            _autoFilledChoices[question.id] = value;
+          }
+        }
+      }
+    }
   }
 
   void _applyClientToStudentFields(Client client) {
     const identityNameGroups = {'student_name', 'learner_name', 'client_name'};
+    final parentNames = <String, Map<FormNamePart, String>>{
+      'father_name': _legacyNameParts(client.fatherName ?? ''),
+      'mother_name': _legacyNameParts(client.motherName ?? ''),
+      'guardian_name': _legacyNameParts(client.guardianName ?? ''),
+    };
     final legacyNameParts = _legacyNameParts(client.fullName);
     final nameParts = {
       FormNamePart.first: _clientNamePart(
@@ -1024,25 +1441,55 @@ class _CounselingFormPageState extends State<CounselingFormPage> {
       ),
     };
 
+    final simpleValues = <String, String>{
+      'contact_number': client.phone ?? '',
+      if (client.dateOfBirth != null)
+        'age': _clientAge(client.dateOfBirth!).toString(),
+      if (client.gradeSection != null) 'grade_section': client.gradeSection!,
+      if (client.address != null) ...{
+        'home_address': client.address!,
+        'address_visited': client.address!,
+      },
+      if (client.religion != null) 'religion': client.religion!,
+      if (client.fatherJob != null) 'father_occupation': client.fatherJob!,
+      if (client.fatherEducation != null)
+        'father_education': client.fatherEducation!,
+      if (client.motherJob != null) 'mother_occupation': client.motherJob!,
+      if (client.motherEducation != null)
+        'mother_education': client.motherEducation!,
+      if (client.guardianRelationship != null)
+        'guardian_relationship': client.guardianRelationship!,
+    };
+
     for (final section in widget.form.sections) {
       for (final question in section.questions) {
         final controller = _textControllers[question.id];
         if (controller != null) {
           String? value;
+          final parentParts = parentNames[question.nameGroup];
           if (question.nameGroup != null &&
               identityNameGroups.contains(question.nameGroup)) {
             value = nameParts[question.namePart];
+          } else if (parentParts != null && question.namePart != null) {
+            value = parentParts[question.namePart]!;
           } else if (identityNameGroups.contains(question.id)) {
             value = client.fullName;
-          } else if (question.id == 'contact_number') {
-            value = client.phone ?? '';
-          } else if (question.id == 'age') {
-            value = client.dateOfBirth == null
-                ? ''
-                : _clientAge(client.dateOfBirth!).toString();
+          } else if (simpleValues.containsKey(question.id)) {
+            value = simpleValues[question.id];
           }
           if (value != null) {
             _applyAutoFilledText(question.id, controller, value);
+          }
+        }
+
+        if (question.type == FormInputType.choice && question.id == 'sex') {
+          final value = client.sex;
+          final current = _choices[question.id];
+          if (value != null &&
+              question.options.contains(value) &&
+              (current == null || current == _autoFilledChoices[question.id])) {
+            _choices[question.id] = value;
+            _autoFilledChoices[question.id] = value;
           }
         }
 
@@ -1150,6 +1597,10 @@ class _CounselingFormPageState extends State<CounselingFormPage> {
   }
 
   Future<void> _save() async {
+    if (_isBatch) {
+      await _saveBatch();
+      return;
+    }
     if (!_hasAnyAnswer) {
       setState(() => _error = 'Enter at least one response before saving.');
       return;
@@ -1206,6 +1657,75 @@ class _CounselingFormPageState extends State<CounselingFormPage> {
     }
   }
 
+  /// Saves every selected form as its own record in one batch. Forms the
+  /// administrator left untouched are skipped; existing records for the
+  /// student are updated in place.
+  Future<void> _saveBatch() async {
+    final spec = widget.batch!;
+    if (_clientId == null) {
+      setState(() => _error = 'Select a student before saving the batch.');
+      return;
+    }
+    setState(() {
+      _saving = true;
+      _error = null;
+      _notice = null;
+    });
+
+    final compositeData = _collectData();
+    final byForm = spec.composite.split(compositeData);
+    final toSave = <String, Map<String, Object?>>{
+      for (final entry in byForm.entries)
+        if (spec.composite.isAnswered(entry.key, compositeData))
+          entry.key: entry.value,
+    };
+    if (toSave.isEmpty) {
+      setState(() {
+        _saving = false;
+        _error = 'Fill in at least one of the selected forms before saving.';
+      });
+      return;
+    }
+
+    _batchId ??= 'batch-${DateTime.now().microsecondsSinceEpoch}';
+    try {
+      final saved = await context.read<FormSubmissionRepository>().saveBatch(
+        clientId: _clientId!,
+        batchId: _batchId!,
+        dataByForm: toSave,
+        existingIdsByForm: {
+          for (final entry in _existingByForm.entries)
+            entry.key: entry.value.id,
+        },
+      );
+      if (!mounted) return;
+      final skipped = byForm.length - saved.length;
+      setState(() {
+        _existingByForm.addAll(saved);
+        _saving = false;
+        _error = null;
+        _notice = skipped == 0
+            ? 'Saved ${saved.length} form${saved.length == 1 ? '' : 's'}.'
+            : 'Saved ${saved.length} of ${byForm.length} forms — '
+                  '$skipped empty form${skipped == 1 ? '' : 's'} skipped.';
+      });
+    } on AppException catch (error) {
+      if (mounted) {
+        setState(() {
+          _error = error.message;
+          _saving = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _error = 'The batch could not be saved.';
+          _saving = false;
+        });
+      }
+    }
+  }
+
   Map<String, Object?> _collectData() {
     final data = <String, Object?>{};
     for (final section in widget.form.sections) {
@@ -1240,14 +1760,150 @@ class _CounselingFormPageState extends State<CounselingFormPage> {
     return data;
   }
 
+  /// Plain-text summary of the referral for the e-mail body. Only the
+  /// referral itself is included, never counseling session notes.
+  ({String subject, String body}) _referralEmailContent() {
+    final data = _collectData();
+    String text(String key) => (data[key] as String?)?.trim() ?? '';
+    String name(String group) => [
+      text('${group}_first'),
+      text('${group}_middle'),
+      text('${group}_last'),
+      text('${group}_suffix'),
+    ].where((part) => part.isNotEmpty).join(' ');
+    List<String> list(String key) =>
+        (data[key] as List?)?.whereType<String>().toList() ?? const [];
+
+    final learner = name('learner_name');
+    final reasons = [
+      for (final reason in list('referral_reasons'))
+        if (reason == 'Others' && text('other_reason').isNotEmpty)
+          'Others: ${text('other_reason')}'
+        else
+          reason,
+    ];
+    final referrer = [
+      name('referring_person'),
+      text('designation'),
+    ].where((part) => part.isNotEmpty).join(', ');
+    final lines = <String>[
+      'REFERRAL FORM (CC Form 4)',
+      'Carranglan National High School — Guidance Office',
+      '',
+      'Learner: ${learner.isEmpty ? '—' : learner}',
+      'Grade and section: ${text('grade_section').isEmpty ? '—' : text('grade_section')}',
+      'Referred by: ${referrer.isEmpty ? '—' : referrer}',
+      'Date referred: ${(data['referral_date'] as String?) ?? '—'}',
+      '',
+      'Reasons for referral:',
+      if (reasons.isEmpty) '—' else ...reasons.map((reason) => '- $reason'),
+      '',
+      'Brief description of concern:',
+      text('concern_description').isEmpty ? '—' : text('concern_description'),
+      '',
+      'Actions already taken:',
+      if (list('actions_taken').isEmpty)
+        '—'
+      else
+        ...list('actions_taken').map((action) => '- $action'),
+      '',
+      'Sent from Counseling IS. This message contains confidential learner '
+          'information protected under the Data Privacy Act of 2012.',
+    ];
+    return (
+      subject:
+          'Referral — ${learner.isEmpty ? 'learner' : learner} — Carranglan NHS',
+      body: lines.join('\n'),
+    );
+  }
+
+  Future<void> _sendReferralEmail() async {
+    final content = _referralEmailContent();
+    await showDialog<bool>(
+      context: context,
+      builder: (_) =>
+          ReferralEmailDialog(subject: content.subject, body: content.body),
+    );
+  }
+
+  /// Fills the original Word template (the exact form the school supplied)
+  /// with the answers and opens it in Word's print preview, so the printed
+  /// form keeps the original layout.
+  Future<void> _printOriginalLayout() async {
+    if (_exporting || _clientsLoading) return;
+    final location = await getSaveLocation(
+      acceptedTypeGroups: const [
+        XTypeGroup(label: 'Word document', extensions: ['docx']),
+      ],
+      suggestedName:
+          '${widget.form.id}-${DateTime.now().toIso8601String().split('T').first}.docx',
+    );
+    if (location == null || !mounted) return;
+    setState(() {
+      _exporting = true;
+      _error = null;
+    });
+
+    var message = 'The form was saved and opened in Word print preview.';
+    try {
+      final result = await _docxExporter.export(
+        form: widget.form,
+        data: _collectData(),
+      );
+      var path = location.path;
+      if (!path.toLowerCase().endsWith('.docx')) path = '$path.docx';
+      await File(path).writeAsBytes(result.bytes, flush: true);
+      try {
+        await const WordPrintPreview().open(path);
+      } on AppException catch (error) {
+        message = '${error.message} The form was saved to: $path';
+      } catch (_) {
+        message =
+            'The form was saved to $path but could not be opened '
+            'automatically. Open the file to print it.';
+      }
+    } catch (_) {
+      message = 'Could not create the Word form.';
+    } finally {
+      if (mounted) {
+        setState(() => _exporting = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            behavior: SnackBarBehavior.floating,
+            showCloseIcon: true,
+            content: Text(message),
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _exportForPrinting() async {
     if (_exporting || _clientsLoading) return;
+    final composite = widget.batch?.composite;
+    final compositeData = _collectData();
+    final entries = <({CounselingForm form, Map<String, Object?> data})>[];
+    if (composite != null) {
+      final byForm = composite.split(compositeData);
+      for (final source in composite.sourceForms) {
+        if (composite.isAnswered(source.id, compositeData)) {
+          entries.add((form: source, data: byForm[source.id]!));
+        }
+      }
+      if (entries.isEmpty) {
+        setState(() => _error = 'Fill in at least one form before exporting.');
+        return;
+      }
+    } else {
+      entries.add((form: widget.form, data: compositeData));
+    }
     final location = await getSaveLocation(
       acceptedTypeGroups: const [
         XTypeGroup(label: 'PDF document', extensions: ['pdf']),
       ],
       suggestedName:
-          '${widget.form.id}-${DateTime.now().toIso8601String().split('T').first}.pdf',
+          '${composite == null ? widget.form.id : 'batch-forms'}-'
+          '${DateTime.now().toIso8601String().split('T').first}.pdf',
     );
     if (location == null || !mounted) return;
     setState(() {
@@ -1256,17 +1912,16 @@ class _CounselingFormPageState extends State<CounselingFormPage> {
     });
 
     try {
-      final result = await _pdfExporter.export(
-        form: widget.form,
-        data: _collectData(),
-      );
+      final result = await _pdfExporter.exportBatch(entries: entries);
       await File(location.path).writeAsBytes(result.bytes, flush: true);
 
       var printMessage = 'The PDF was saved and is ready to print.';
       Object? printError;
       try {
         final printed = await Printing.layoutPdf(
-          name: '${widget.form.title}.pdf',
+          name: composite == null
+              ? '${widget.form.title}.pdf'
+              : 'Combined student forms.pdf',
           format: result.pageFormat,
           onLayout: (_) async => result.bytes,
         );
@@ -1399,14 +2054,18 @@ class _CounselingFormPageState extends State<CounselingFormPage> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  if (_notice != null) ...[
+                    SuccessBanner(
+                      message: _notice!,
+                      onDismiss: () => setState(() => _notice = null),
+                    ),
+                    const SizedBox(height: AppSpacing.lg),
+                  ],
                   _buildDocumentHeading(),
                   const SizedBox(height: AppSpacing.lg),
                   _buildClientField(),
                   const SizedBox(height: AppSpacing.lg),
-                  for (final section in widget.form.sections) ...[
-                    _buildSection(section),
-                    const SizedBox(height: AppSpacing.lg),
-                  ],
+                  ..._buildFormSections(),
                   if (_error != null) ...[
                     const SizedBox(height: AppSpacing.sm),
                     ErrorBanner(message: _error!),
@@ -1428,16 +2087,34 @@ class _CounselingFormPageState extends State<CounselingFormPage> {
             child: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
+                if (widget.form.id == 'referral')
+                  IconButton(
+                    onPressed: _saving || _exporting
+                        ? null
+                        : _sendReferralEmail,
+                    icon: const Icon(Icons.forward_to_inbox_outlined),
+                    tooltip: 'Send referral by e-mail',
+                  ),
+                if (!_isBatch)
+                  IconButton(
+                    onPressed: _saving || _exporting
+                        ? null
+                        : _printOriginalLayout,
+                    icon: _exporting
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.print_outlined),
+                    tooltip: 'Print (exact form layout, opens Word)',
+                  ),
                 IconButton(
                   onPressed: _saving || _exporting ? null : _exportForPrinting,
-                  icon: _exporting
-                      ? const SizedBox(
-                          width: 20,
-                          height: 20,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.print_outlined),
-                  tooltip: 'Preview and print PDF',
+                  icon: const Icon(Icons.picture_as_pdf_outlined),
+                  tooltip: _isBatch
+                      ? 'Save as PDF (all forms in this batch)'
+                      : 'Save as PDF (app layout)',
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 FilledButton.icon(
@@ -1449,7 +2126,7 @@ class _CounselingFormPageState extends State<CounselingFormPage> {
                           child: CircularProgressIndicator(strokeWidth: 2),
                         )
                       : const Icon(Icons.save_outlined),
-                  label: Text(_isEdit ? 'Save changes' : 'Save form'),
+                  label: Text(_batchSaveLabel),
                 ),
               ],
             ),
@@ -1478,16 +2155,30 @@ class _CounselingFormPageState extends State<CounselingFormPage> {
           ],
         ),
         actions: [
+          if (widget.form.id == 'referral')
+            IconButton(
+              onPressed: _saving || _exporting ? null : _sendReferralEmail,
+              icon: const Icon(Icons.forward_to_inbox_outlined),
+              tooltip: 'Send referral by e-mail',
+            ),
+          if (!_isBatch)
+            IconButton(
+              onPressed: _saving || _exporting ? null : _printOriginalLayout,
+              icon: _exporting
+                  ? const SizedBox(
+                      width: 20,
+                      height: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : const Icon(Icons.print_outlined),
+              tooltip: 'Print (exact form layout, opens Word)',
+            ),
           IconButton(
             onPressed: _saving || _exporting ? null : _exportForPrinting,
-            icon: _exporting
-                ? const SizedBox(
-                    width: 20,
-                    height: 20,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Icon(Icons.print_outlined),
-            tooltip: 'Preview and print PDF',
+            icon: const Icon(Icons.picture_as_pdf_outlined),
+            tooltip: _isBatch
+                ? 'Save as PDF (all forms in this batch)'
+                : 'Save as PDF (app layout)',
           ),
           const SizedBox(width: AppSpacing.sm),
           Padding(
@@ -1501,13 +2192,66 @@ class _CounselingFormPageState extends State<CounselingFormPage> {
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.save_outlined),
-              label: Text(_isEdit ? 'Save changes' : 'Save form'),
+              label: Text(_batchSaveLabel),
             ),
           ),
           const SizedBox(width: AppSpacing.md),
         ],
       ),
       body: SingleChildScrollView(child: formDocument),
+    );
+  }
+
+  /// The merged page's sections, each preceded by its source form's
+  /// banner so the page reads as the original forms in sequence.
+  List<Widget> _buildFormSections() {
+    final composite = widget.batch?.composite;
+    final children = <Widget>[];
+    for (var index = 0; index < widget.form.sections.length; index++) {
+      final banner = composite?.sectionBanners[index];
+      if (banner != null) {
+        children.add(_buildFormBanner(banner));
+        children.add(const SizedBox(height: AppSpacing.sm));
+      }
+      children.add(_buildSection(widget.form.sections[index]));
+      children.add(const SizedBox(height: AppSpacing.lg));
+    }
+    return children;
+  }
+
+  Widget _buildFormBanner(String text) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(
+        horizontal: AppSpacing.md,
+        vertical: AppSpacing.sm,
+      ),
+      decoration: BoxDecoration(
+        color: colors.primaryContainer,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: colors.outlineVariant),
+      ),
+      child: Row(
+        children: [
+          Icon(
+            Icons.description_outlined,
+            size: 18,
+            color: colors.onPrimaryContainer,
+          ),
+          const SizedBox(width: AppSpacing.sm),
+          Expanded(
+            child: Text(
+              text,
+              style: theme.textTheme.titleSmall?.copyWith(
+                color: colors.onPrimaryContainer,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1552,9 +2296,13 @@ class _CounselingFormPageState extends State<CounselingFormPage> {
           isExpanded: true,
           menuMaxHeight: AppDropdownDefaults.menuMaxHeight,
           decoration: InputDecoration(
-            labelText: 'Linked student (optional)',
-            helperText: 'Link this record to an existing student.',
-            suffixIcon: _clientId == null
+            labelText: _isBatch
+                ? 'Linked student'
+                : 'Linked student (optional)',
+            helperText: _isBatch
+                ? 'Every form in this batch is saved against this student.'
+                : 'Link this record to an existing student.',
+            suffixIcon: _isBatch || _clientId == null
                 ? null
                 : IconButton(
                     tooltip: 'Remove student link',
@@ -1577,7 +2325,7 @@ class _CounselingFormPageState extends State<CounselingFormPage> {
                 ),
               )
               .toList(),
-          onChanged: _saving ? null : _linkClient,
+          onChanged: _saving || _isBatch ? null : _linkClient,
         ),
       ),
     );

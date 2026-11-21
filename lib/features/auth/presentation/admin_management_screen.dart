@@ -19,6 +19,8 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
   late Future<List<AdminAccount>> _future;
   String? _error;
   bool _saving = false;
+  int? _sortColumnIndex;
+  bool _sortAscending = true;
 
   @override
   void initState() {
@@ -30,6 +32,13 @@ class _AdminManagementScreenState extends State<AdminManagementScreen> {
       context.read<AuthController>().listManagedAdmins();
 
   void _refresh() => setState(() => _future = _load());
+
+  void _onSort(int columnIndex, bool ascending) {
+    setState(() {
+      _sortColumnIndex = columnIndex;
+      _sortAscending = ascending;
+    });
+  }
 
   Future<void> _addAccount() async {
     final saved = await showDialog<bool>(

@@ -140,13 +140,61 @@ class _DashboardBody extends StatelessWidget {
               _GuidanceQueue(stats: stats, dateLabel: _monthDay(now)),
               const SizedBox(height: AppSpacing.md),
               _DashboardDetailCard(
-                title: 'Upcoming appointments',
+                title: 'Upcoming sessions (${stats.upcomingAppointments})',
                 icon: Icons.event_note_outlined,
-                emptyMessage: 'No upcoming appointments.',
+                emptyMessage: 'No upcoming sessions.',
                 onViewAll: () => context.go('/appointments'),
                 children: [
                   for (final appointment in stats.upcomingAppointmentItems)
                     _AppointmentTile(appointment: appointment, showDate: true),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              _DashboardDetailCard(
+                title: 'Pending sessions (${stats.pendingSessions})',
+                icon: Icons.pending_actions_outlined,
+                emptyMessage: 'No pending sessions.',
+                onViewAll: () => context.go('/appointments'),
+                children: [
+                  for (final appointment in stats.pendingAppointmentItems)
+                    _AppointmentTile(
+                      appointment: appointment,
+                      showDate: true,
+                      note: 'Date has passed — mark completed, missed or '
+                          'cancelled',
+                    ),
+                ],
+              ),
+              const SizedBox(height: AppSpacing.md),
+              _DashboardDetailCard(
+                title: 'Needs follow-up (${stats.needsFollowUp})',
+                icon: Icons.notification_important_outlined,
+                emptyMessage: 'No students need a follow-up right now.',
+                onViewAll: () => context.go('/appointments'),
+                children: [
+                  for (final item in stats.followUpItems)
+                    ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: const Icon(Icons.person_outline),
+                      title: Text(
+                        item.clientName,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      subtitle: Text(
+                        item.dueDate.isBefore(
+                              DateTime(now.year, now.month, now.day),
+                            )
+                            ? 'Follow-up overdue'
+                            : 'Follow-up due soon',
+                      ),
+                      trailing: Text(
+                        formatDate(item.dueDate),
+                        textAlign: TextAlign.end,
+                        style: Theme.of(context).textTheme.labelSmall,
+                      ),
+                      onTap: () => context.go('/appointments'),
+                    ),
                 ],
               ),
             ],
@@ -245,7 +293,7 @@ class _WelcomeBanner extends StatelessWidget {
                                   ),
                                   const SizedBox(height: AppSpacing.xs),
                                   Text(
-                                    'Monitor student guidance, case progress, and follow-ups.',
+                                    'Monitor student guidance, sessions, and follow-ups.',
                                     maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
                                     style: theme.textTheme.bodyMedium?.copyWith(
@@ -461,10 +509,15 @@ class _GuidanceQueue extends StatelessWidget {
 }
 
 class _AppointmentTile extends StatelessWidget {
-  const _AppointmentTile({required this.appointment, required this.showDate});
+  const _AppointmentTile({
+    required this.appointment,
+    required this.showDate,
+    this.note,
+  });
 
   final Appointment appointment;
   final bool showDate;
+  final String? note;
 
   @override
   Widget build(BuildContext context) {
@@ -478,9 +531,10 @@ class _AppointmentTile extends StatelessWidget {
         overflow: TextOverflow.ellipsis,
       ),
       subtitle: Text(
-        purpose?.isNotEmpty == true
-            ? purpose!
-            : 'Counseling appointment · ${appointment.status.label}',
+        note ??
+            (purpose?.isNotEmpty == true
+                ? purpose!
+                : 'Counseling appointment · ${appointment.status.label}'),
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
